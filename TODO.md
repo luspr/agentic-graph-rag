@@ -114,6 +114,8 @@ state: done
 
 ### Task 1.5: Implement OpenAI client
 
+state: done
+
 **Description:** Create an async OpenAI client implementing the LLMClient interface with support for chat completions with tool calling and embedding generation.
 
 Refer to this for gpt-5.2: https://platform.openai.com/docs/guides/latest-model
@@ -123,16 +125,16 @@ Refer to this for gpt-5.2: https://platform.openai.com/docs/guides/latest-model
 - `src/agentic_graph_rag/llm/openai_client.py`
 
 **Acceptance Criteria:**
-- [ ] `LLMClient` ABC defined with: `complete()`, `embed()` methods
-- [ ] `ToolCall`, `LLMResponse`, `ToolDefinition` dataclasses defined
-- [ ] `OpenAILLMClient` class implements `LLMClient`
-- [ ] `complete()` sends chat completion request with optional tools
-- [ ] `complete()` parses tool calls from response into `ToolCall` objects
-- [ ] `embed()` generates embeddings using text-embedding-3-small
-- [ ] Retry logic with exponential backoff for rate limits
-- [ ] Proper error handling for API errors
-- [ ] Unit tests with mocked OpenAI client
-- [ ] `pyrefly check` passes
+- [x] `LLMClient` ABC defined with: `complete()`, `embed()` methods
+- [x] `ToolCall`, `LLMResponse`, `ToolDefinition` dataclasses defined
+- [x] `OpenAILLMClient` class implements `LLMClient`
+- [x] `complete()` sends chat completion request with optional tools
+- [x] `complete()` parses tool calls from response into `ToolCall` objects
+- [x] `embed()` generates embeddings using text-embedding-3-small
+- [x] Retry logic with exponential backoff for rate limits
+- [x] Proper error handling for API errors
+- [x] Unit tests with mocked OpenAI client
+- [x] `pyrefly check` passes
 
 ---
 
@@ -140,16 +142,18 @@ Refer to this for gpt-5.2: https://platform.openai.com/docs/guides/latest-model
 
 ### Task 2.1: Implement base retriever interfaces
 
+state: done
+
 **Description:** Define the abstract Retriever interface and all supporting dataclasses for retrieval operations.
 
 **Files:** `src/agentic_graph_rag/retriever/base.py`
 
 **Acceptance Criteria:**
-- [ ] `RetrievalStrategy` enum with CYPHER, HYBRID values
-- [ ] `RetrievalStep` dataclass: action, input, output, error fields
-- [ ] `RetrievalResult` dataclass: data, steps, success, message fields
-- [ ] `Retriever` ABC with: `retrieve()` method, `strategy` property
-- [ ] `pyrefly check` passes
+- [x] `RetrievalStrategy` enum with CYPHER, HYBRID values
+- [x] `RetrievalStep` dataclass: action, input, output, error fields
+- [x] `RetrievalResult` dataclass: data, steps, success, message fields
+- [x] `Retriever` ABC with: `retrieve()` method, `strategy` property
+- [x] `pyrefly check` passes
 
 ---
 
