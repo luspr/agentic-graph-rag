@@ -133,9 +133,7 @@ class OpenAILLMClient(LLMClient):
         )
         return response.data[0].embedding
 
-    def _convert_tools(
-        self, tools: list[ToolDefinition]
-    ) -> list[dict[str, Any]]:
+    def _convert_tools(self, tools: list[ToolDefinition]) -> list[dict[str, Any]]:
         """Convert ToolDefinition list to OpenAI tools format."""
         return [
             {

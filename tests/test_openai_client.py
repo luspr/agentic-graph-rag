@@ -119,7 +119,9 @@ async def test_complete_sends_tools_in_correct_format(
     """complete() converts ToolDefinition to OpenAI format."""
     mock_response = MagicMock()
     mock_response.choices = [
-        MagicMock(message=MagicMock(content="OK", tool_calls=None), finish_reason="stop")
+        MagicMock(
+            message=MagicMock(content="OK", tool_calls=None), finish_reason="stop"
+        )
     ]
     mock_response.usage = MagicMock(
         prompt_tokens=10, completion_tokens=5, total_tokens=15
@@ -159,7 +161,9 @@ async def test_complete_omits_temperature_with_reasoning_effort(
     """complete() omits temperature when reasoning effort is set."""
     mock_response = MagicMock()
     mock_response.choices = [
-        MagicMock(message=MagicMock(content="OK", tool_calls=None), finish_reason="stop")
+        MagicMock(
+            message=MagicMock(content="OK", tool_calls=None), finish_reason="stop"
+        )
     ]
     mock_response.usage = MagicMock(
         prompt_tokens=10, completion_tokens=5, total_tokens=15
@@ -186,7 +190,9 @@ async def test_complete_allows_temperature_with_reasoning_none(
     """complete() keeps temperature when reasoning effort is none."""
     mock_response = MagicMock()
     mock_response.choices = [
-        MagicMock(message=MagicMock(content="OK", tool_calls=None), finish_reason="stop")
+        MagicMock(
+            message=MagicMock(content="OK", tool_calls=None), finish_reason="stop"
+        )
     ]
     mock_response.usage = MagicMock(
         prompt_tokens=10, completion_tokens=5, total_tokens=15
@@ -284,7 +290,9 @@ async def test_retry_on_rate_limit(
     """complete() retries on rate limit errors with exponential backoff."""
     mock_response = MagicMock()
     mock_response.choices = [
-        MagicMock(message=MagicMock(content="OK", tool_calls=None), finish_reason="stop")
+        MagicMock(
+            message=MagicMock(content="OK", tool_calls=None), finish_reason="stop"
+        )
     ]
     mock_response.usage = MagicMock(
         prompt_tokens=10, completion_tokens=5, total_tokens=15
@@ -315,7 +323,9 @@ async def test_retry_on_connection_error(
     """complete() retries on connection errors."""
     mock_response = MagicMock()
     mock_response.choices = [
-        MagicMock(message=MagicMock(content="OK", tool_calls=None), finish_reason="stop")
+        MagicMock(
+            message=MagicMock(content="OK", tool_calls=None), finish_reason="stop"
+        )
     ]
     mock_response.usage = MagicMock(
         prompt_tokens=10, completion_tokens=5, total_tokens=15

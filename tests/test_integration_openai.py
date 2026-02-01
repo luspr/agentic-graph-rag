@@ -57,7 +57,10 @@ async def test_complete_returns_text(client: OpenAILLMClient) -> None:
 async def test_complete_respects_system_message(client: OpenAILLMClient) -> None:
     """complete() honours a system message that constrains the response."""
     messages = [
-        {"role": "system", "content": "You are a robot. Every response must be exactly the single word 'beep'."},
+        {
+            "role": "system",
+            "content": "You are a robot. Every response must be exactly the single word 'beep'.",
+        },
         {"role": "user", "content": "Say something."},
     ]
 
