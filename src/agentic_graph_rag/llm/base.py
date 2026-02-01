@@ -40,6 +40,7 @@ class LLMClient(ABC):
         messages: list[dict[str, Any]],
         tools: list[ToolDefinition] | None = None,
         temperature: float = 0.0,
+        reasoning_effort: str | None = None,
     ) -> LLMResponse:
         """Generate a completion with optional tool calling."""
         ...

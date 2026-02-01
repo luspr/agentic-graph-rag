@@ -153,6 +153,60 @@ async def test_complete_sends_tools_in_correct_format(
 
 
 @pytest.mark.anyio
+async def test_complete_omits_temperature_with_reasoning_effort(
+    client: OpenAILLMClient, mock_openai_client: MagicMock
+) -> None:
+    """complete() omits temperature when reasoning effort is set."""
+    mock_response = MagicMock()
+    mock_response.choices = [
+        MagicMock(message=MagicMock(content="OK", tool_calls=None), finish_reason="stop")
+    ]
+    mock_response.usage = MagicMock(
+        prompt_tokens=10, completion_tokens=5, total_tokens=15
+    )
+
+    mock_create = AsyncMock(return_value=mock_response)
+    mock_openai_client.chat.completions.create = mock_create
+
+    await client.complete(
+        [{"role": "user", "content": "test"}],
+        reasoning_effort="high",
+        temperature=0.7,
+    )
+
+    call_kwargs = mock_create.call_args.kwargs
+    assert call_kwargs["reasoning_effort"] == "high"
+    assert "temperature" not in call_kwargs
+
+
+@pytest.mark.anyio
+async def test_complete_allows_temperature_with_reasoning_none(
+    client: OpenAILLMClient, mock_openai_client: MagicMock
+) -> None:
+    """complete() keeps temperature when reasoning effort is none."""
+    mock_response = MagicMock()
+    mock_response.choices = [
+        MagicMock(message=MagicMock(content="OK", tool_calls=None), finish_reason="stop")
+    ]
+    mock_response.usage = MagicMock(
+        prompt_tokens=10, completion_tokens=5, total_tokens=15
+    )
+
+    mock_create = AsyncMock(return_value=mock_response)
+    mock_openai_client.chat.completions.create = mock_create
+
+    await client.complete(
+        [{"role": "user", "content": "test"}],
+        reasoning_effort="none",
+        temperature=0.3,
+    )
+
+    call_kwargs = mock_create.call_args.kwargs
+    assert call_kwargs["reasoning_effort"] == "none"
+    assert call_kwargs["temperature"] == 0.3
+
+
+@pytest.mark.anyio
 async def test_complete_handles_invalid_json_arguments(
     client: OpenAILLMClient, mock_openai_client: MagicMock
 ) -> None:

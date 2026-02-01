@@ -67,6 +67,21 @@ async def test_complete_respects_system_message(client: OpenAILLMClient) -> None
     assert "beep" in response.content.lower()
 
 
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_complete_with_reasoning_effort(client: OpenAILLMClient) -> None:
+    """complete() supports non-default reasoning effort settings."""
+    messages = [{"role": "user", "content": "Reply with exactly one word: hello"}]
+
+    response = await client.complete(messages, reasoning_effort="high")
+
+    assert response.content is not None
+    assert len(response.content.strip()) > 0
+    assert response.finish_reason == "stop"
+    assert response.usage["prompt_tokens"] > 0
+    assert response.usage["completion_tokens"] > 0
+
+
 # ---------------------------------------------------------------------------
 # complete() — tool calling
 # ---------------------------------------------------------------------------

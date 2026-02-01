@@ -49,6 +49,7 @@ class OpenAILLMClient(LLMClient):
         messages: list[dict[str, Any]],
         tools: list[ToolDefinition] | None = None,
         temperature: float = 0.0,
+        reasoning_effort: str | None = None,
     ) -> LLMResponse:
         """Generate a completion with optional tool calling.
 
@@ -56,6 +57,7 @@ class OpenAILLMClient(LLMClient):
             messages: List of message dicts with 'role' and 'content' keys.
             tools: Optional list of tool definitions the model can call.
             temperature: Sampling temperature (0.0 for deterministic).
+            reasoning_effort: Optional reasoning effort setting for GPT-5.2.
 
         Returns:
             LLMResponse containing the model's response.
@@ -65,11 +67,14 @@ class OpenAILLMClient(LLMClient):
         """
         openai_tools = self._convert_tools(tools) if tools else None
 
-        kwargs: dict[str, Any] = {
-            "model": self._model,
-            "messages": messages,
-            "temperature": temperature,
-        }
+        kwargs: dict[str, Any] = {"model": self._model, "messages": messages}
+
+        if reasoning_effort is not None:
+            kwargs["reasoning_effort"] = reasoning_effort
+
+        # GPT-5.2 only permits temperature when reasoning effort is "none".
+        if reasoning_effort in (None, "none"):
+            kwargs["temperature"] = temperature
 
         if openai_tools:
             kwargs["tools"] = openai_tools
