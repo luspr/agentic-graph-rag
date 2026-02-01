@@ -5,7 +5,7 @@ Each task includes a description, files to create/modify, and acceptance criteri
 
 See `ARCHITECTURE.md` for the full architecture design and interface definitions.
 
-For each task, create a new feature branch (branching from default master), commit intermediate steps, push, and create a PR on github.
+For each task, create a new feature branch (branching from default master), commit intermediate steps, push, and create a PR on github. Default branch is master. PR to that.
 
 ---
 
