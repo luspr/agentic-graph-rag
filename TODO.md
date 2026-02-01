@@ -5,6 +5,8 @@ Each task includes a description, files to create/modify, and acceptance criteri
 
 See `ARCHITECTURE.md` for the full architecture design and interface definitions.
 
+For each task, create a new feature branch (branching from default master), commit intermediate steps, push, and create a PR on github.
+
 ---
 
 ## Phase 1: Foundation (Core Infrastructure)
@@ -60,6 +62,8 @@ state: done
 
 ### Task 1.3: Implement Neo4j client
 
+state: done
+
 **Description:** Create an async Neo4j client implementing the GraphDatabase interface for query execution and schema introspection.
 
 **Files:**
@@ -67,16 +71,23 @@ state: done
 - `src/agentic_graph_rag/graph/neo4j_client.py`
 
 **Acceptance Criteria:**
-- [ ] `GraphDatabase` ABC defined with: `execute()`, `get_schema()`, `validate_query()` methods
-- [ ] `QueryResult`, `NodeType`, `RelationshipType`, `GraphSchema` dataclasses defined
-- [ ] `Neo4jClient` class implements `GraphDatabase`
-- [ ] Connection pool management with async context manager
-- [ ] `execute()` runs Cypher and returns `QueryResult` with records and summary
-- [ ] `get_schema()` returns `GraphSchema` with node labels, relationship types, and properties
-- [ ] `validate_query()` uses EXPLAIN to check query syntax without executing
-- [ ] Proper error handling - captures Neo4j errors in `QueryResult.error`
-- [ ] Unit tests with mocked driver
-- [ ] `pyrefly check` passes
+- [x] `GraphDatabase` ABC defined with: `execute()`, `get_schema()`, `validate_query()` methods
+- [x] `QueryResult`, `NodeType`, `RelationshipType`, `GraphSchema` dataclasses defined
+- [x] `Neo4jClient` class implements `GraphDatabase`
+- [x] Connection pool management with async context manager
+- [x] `execute()` runs Cypher and returns `QueryResult` with records and summary
+- [x] `get_schema()` returns `GraphSchema` with node labels, relationship types, and properties
+- [x] `validate_query()` uses EXPLAIN to check query syntax without executing
+- [x] Proper error handling - captures Neo4j errors in `QueryResult.error`
+- [x] Unit tests with mocked driver
+- [x] `pyrefly check` passes
+- [x] Fixed `_NODE_COUNTS_QUERY`: Neo4j 5.x drops variables after `WITH`; switched to
+      `RETURN labels(n)[0], count(*)` which uses implicit grouping.
+- [x] `db.schema.relationshipTypeProperties()` is unavailable on Neo4j community
+      edition — existing error-handling path already degrades gracefully (relationships
+      returned without properties).
+- [x] Integration tests added (`tests/test_integration_neo4j.py`), opt-in via
+      `uv run pytest -m integration`. Tests are read-only against the movies dataset.
 
 ---
 
