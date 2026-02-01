@@ -81,6 +81,13 @@ state: done
 - [x] Proper error handling - captures Neo4j errors in `QueryResult.error`
 - [x] Unit tests with mocked driver
 - [x] `pyrefly check` passes
+- [x] Fixed `_NODE_COUNTS_QUERY`: Neo4j 5.x drops variables after `WITH`; switched to
+      `RETURN labels(n)[0], count(*)` which uses implicit grouping.
+- [x] `db.schema.relationshipTypeProperties()` is unavailable on Neo4j community
+      edition — existing error-handling path already degrades gracefully (relationships
+      returned without properties).
+- [x] Integration tests added (`tests/test_integration_neo4j.py`), opt-in via
+      `uv run pytest -m integration`. Tests are read-only against the movies dataset.
 
 ---
 

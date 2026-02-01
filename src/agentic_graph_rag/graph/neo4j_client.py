@@ -19,9 +19,7 @@ _NODE_PROPERTIES_QUERY = (
     "CALL db.schema.nodeTypeProperties() YIELD nodeLabels, propertyName, propertyTypes"
 )
 
-_NODE_COUNTS_QUERY = (
-    "MATCH (n) WITH labels(n)[0] AS label RETURN label, count(n) AS count"
-)
+_NODE_COUNTS_QUERY = "MATCH (n) RETURN labels(n)[0] AS label, count(*) AS count"
 
 _REL_STRUCTURE_QUERY = (
     "MATCH (a)-[r]->(b) "

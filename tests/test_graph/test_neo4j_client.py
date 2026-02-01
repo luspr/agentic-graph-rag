@@ -202,7 +202,7 @@ async def test_get_schema_returns_graph_schema(settings: Settings) -> None:
             ],
             summary={},
         ),
-        "count(n)": QueryResult(
+        "count(*)": QueryResult(
             records=[
                 {"label": "Movie", "count": 10},
                 {"label": "Person", "count": 5},
