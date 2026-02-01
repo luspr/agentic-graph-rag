@@ -248,6 +248,8 @@ state: done
 
 ### Task 3.3: Implement agent controller
 
+state: done
+
 **Description:** Create the main agent controller that runs the iterative retrieval loop until the LLM submits an answer or max iterations reached.
 
 **Files:**
@@ -255,17 +257,17 @@ state: done
 - `src/agentic_graph_rag/agent/state.py`
 
 **Acceptance Criteria:**
-- [ ] `AgentStatus` enum: RUNNING, COMPLETED, MAX_ITERATIONS, ERROR
-- [ ] `AgentState` dataclass: iteration, status, history, current_answer, confidence
-- [ ] `AgentConfig` dataclass: max_iterations, strategy
-- [ ] `AgentResult` dataclass: answer, status, iterations, history, confidence
-- [ ] `AgentController` class with: `run()`, `step()`, `should_stop()` methods
-- [ ] `run()` loops calling `step()` until `should_stop()` returns True
-- [ ] `step()` sends prompt to LLM, parses tool calls, executes tools, records history
-- [ ] `should_stop()` returns True if: submit_answer called, max_iterations reached, or error
-- [ ] Integrates with tracer to log events
-- [ ] Unit tests with mocked LLM responses
-- [ ] `pyrefly check` passes
+- [x] `AgentStatus` enum: RUNNING, COMPLETED, MAX_ITERATIONS, ERROR
+- [x] `AgentState` dataclass: iteration, status, history, current_answer, confidence
+- [x] `AgentConfig` dataclass: max_iterations, strategy
+- [x] `AgentResult` dataclass: answer, status, iterations, history, confidence
+- [x] `AgentController` class with: `run()`, `step()`, `should_stop()` methods
+- [x] `run()` loops calling `step()` until `should_stop()` returns True
+- [x] `step()` sends prompt to LLM, parses tool calls, executes tools, records history
+- [x] `should_stop()` returns True if: submit_answer called, max_iterations reached, or error
+- [x] Integrates with tracer to log events (via optional Tracer protocol)
+- [x] Unit tests with mocked LLM responses (24 tests)
+- [x] `pyrefly check` passes
 
 ---
 
