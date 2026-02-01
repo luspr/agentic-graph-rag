@@ -34,7 +34,7 @@ packages = ["src/agentic_graph_rag"]
 # Run explicitly with: uv run pytest -m integration
 addopts = "-m 'not integration'"
 markers = [
-    "integration: requires live Neo4j (docker-compose up)",
+    "integration: requires live external services (Neo4j, OpenAI, etc.)",
 ]
 
 [tool.pyrefly]

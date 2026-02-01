@@ -34,6 +34,16 @@ class OpenAILLMClient(LLMClient):
         self._model = model
         self._embedding_model = embedding_model or self.DEFAULT_EMBEDDING_MODEL
 
+    async def aclose(self) -> None:
+        """Close the underlying HTTP client."""
+        await self._client.close()
+
+    async def __aenter__(self) -> "OpenAILLMClient":
+        return self
+
+    async def __aexit__(self, *args: object) -> None:
+        await self.aclose()
+
     async def complete(
         self,
         messages: list[dict[str, Any]],
