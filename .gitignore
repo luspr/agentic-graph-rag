@@ -1,5 +1,9 @@
 CLAUDE.md
 
+# Data dumps
+*.dump
+neo4j-dumps/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
