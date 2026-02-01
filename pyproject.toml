@@ -21,6 +21,7 @@ dev = [
     "python-dotenv>=1.0",
     "ruff>=0.0.0",
     "pyrefly>=0.0.0",
+    "pre-commit>=3.0",
 ]
 
 [build-system]
