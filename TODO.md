@@ -201,6 +201,8 @@ state: done
 
 ### Task 3.1: Implement prompt manager
 
+state: done
+
 **Description:** Create a prompt manager that constructs system and user prompts with schema information, history, and results formatting.
 
 **Files:**
@@ -208,14 +210,14 @@ state: done
 - `src/agentic_graph_rag/prompts/templates.py`
 
 **Acceptance Criteria:**
-- [ ] `PromptContext` dataclass defined
-- [ ] `PromptManager` class with: `build_system_prompt()`, `build_retrieval_prompt()`, `format_results()`
-- [ ] System prompt includes: graph schema (node types, relationships), available tools, instructions
-- [ ] Retrieval prompt includes: user query, previous steps history, current results
-- [ ] `format_results()` converts query results to readable text for LLM
-- [ ] Templates stored as constants in templates.py
-- [ ] Unit tests verifying prompt structure
-- [ ] `pyrefly check` passes
+- [x] `PromptContext` dataclass defined
+- [x] `PromptManager` class with: `build_system_prompt()`, `build_retrieval_prompt()`, `format_results()`
+- [x] System prompt includes: graph schema (node types, relationships), available tools, instructions
+- [x] Retrieval prompt includes: user query, previous steps history, current results
+- [x] `format_results()` converts query results to readable text for LLM
+- [x] Templates stored as constants in templates.py
+- [x] Unit tests verifying prompt structure
+- [x] `pyrefly check` passes
 
 ---
 
