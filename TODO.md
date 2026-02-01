@@ -223,24 +223,26 @@ state: done
 
 ### Task 3.2: Implement tool definitions and handlers
 
+state: done
+
 **Description:** Define the 4 agent tools (execute_cypher, vector_search, expand_node, submit_answer) and create a tool router to dispatch calls.
 
 **Files:** `src/agentic_graph_rag/agent/tools.py`
 
 **Acceptance Criteria:**
-- [ ] `AGENT_TOOLS` list with 4 `ToolDefinition` objects:
+- [x] `AGENT_TOOLS` list with 4 `ToolDefinition` objects:
   - `execute_cypher` - Execute Cypher query against Neo4j
   - `vector_search` - Search for semantically similar nodes
   - `expand_node` - Expand from a node to find connections
   - `submit_answer` - Submit final answer with confidence
-- [ ] `ToolRouter` class that dispatches tool calls to appropriate handlers
-- [ ] `execute_cypher` handler: validates and executes Cypher via retriever
-- [ ] `vector_search` handler: generates embedding and searches via retriever
-- [ ] `expand_node` handler: traverses graph from node via retriever
-- [ ] `submit_answer` handler: returns final answer with confidence
-- [ ] All handlers return dict results suitable for LLM consumption
-- [ ] Unit tests for each tool handler
-- [ ] `pyrefly check` passes
+- [x] `ToolRouter` class that dispatches tool calls to appropriate handlers
+- [x] `execute_cypher` handler: validates and executes Cypher via retriever
+- [x] `vector_search` handler: generates embedding and searches via retriever
+- [x] `expand_node` handler: traverses graph from node via retriever
+- [x] `submit_answer` handler: returns final answer with confidence
+- [x] All handlers return dict results suitable for LLM consumption
+- [x] Unit tests for each tool handler (20 tests covering all handlers and edge cases)
+- [x] `pyrefly check` passes
 
 ---
 
