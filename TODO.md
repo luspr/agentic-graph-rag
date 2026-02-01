@@ -159,20 +159,22 @@ state: done
 
 ### Task 2.2: Implement Cypher retriever
 
+state: done
+
 **Description:** Create a retriever that executes LLM-generated Cypher queries against Neo4j.
 
 **Files:** `src/agentic_graph_rag/retriever/cypher_retriever.py`
 
 **Acceptance Criteria:**
-- [ ] `CypherRetriever` class implements `Retriever`
-- [ ] Constructor takes `GraphDatabase` dependency
-- [ ] `retrieve()` executes provided Cypher query
-- [ ] Results formatted as list of dicts
-- [ ] Each query execution recorded as a `RetrievalStep`
-- [ ] Errors captured without raising exceptions
-- [ ] `strategy` property returns `RetrievalStrategy.CYPHER`
-- [ ] Unit tests with mocked GraphDatabase
-- [ ] `pyrefly check` passes
+- [x] `CypherRetriever` class implements `Retriever`
+- [x] Constructor takes `GraphDatabase` dependency
+- [x] `retrieve()` executes provided Cypher query
+- [x] Results formatted as list of dicts
+- [x] Each query execution recorded as a `RetrievalStep`
+- [x] Errors captured without raising exceptions
+- [x] `strategy` property returns `RetrievalStrategy.CYPHER`
+- [x] Unit tests with mocked GraphDatabase
+- [x] `pyrefly check` passes
 
 ---
 

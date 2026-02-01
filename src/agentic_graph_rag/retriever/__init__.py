@@ -4,8 +4,10 @@ from agentic_graph_rag.retriever.base import (
     RetrievalStrategy,
     Retriever,
 )
+from agentic_graph_rag.retriever.cypher_retriever import CypherRetriever
 
 __all__ = [
+    "CypherRetriever",
     "RetrievalResult",
     "RetrievalStep",
     "RetrievalStrategy",
