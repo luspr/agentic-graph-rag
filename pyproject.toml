@@ -18,6 +18,7 @@ dependencies = [
 dev = [
     "pytest>=8.0",
     "pytest-anyio>=0.0.0",
+    "python-dotenv>=1.0",
     "ruff>=0.0.0",
     "pyrefly>=0.0.0",
 ]
@@ -34,7 +35,7 @@ packages = ["src/agentic_graph_rag"]
 # Run explicitly with: uv run pytest -m integration
 addopts = "-m 'not integration'"
 markers = [
-    "integration: requires live Neo4j (docker-compose up)",
+    "integration: requires live external services (Neo4j, OpenAI, etc.)",
 ]
 
 [tool.pyrefly]

@@ -25,6 +25,7 @@ dev = [
     { name = "pyrefly" },
     { name = "pytest" },
     { name = "pytest-anyio" },
+    { name = "python-dotenv" },
     { name = "ruff" },
 ]
 
@@ -44,6 +45,7 @@ dev = [
     { name = "pyrefly", specifier = ">=0.0.0" },
     { name = "pytest", specifier = ">=8.0" },
     { name = "pytest-anyio", specifier = ">=0.0.0" },
+    { name = "python-dotenv", specifier = ">=1.0" },
     { name = "ruff", specifier = ">=0.0.0" },
 ]
 
