@@ -15,9 +15,10 @@ You have access to tools that allow you to explore the graph database iterativel
 
 2. **vector_search**: Search for nodes semantically similar to given text
    - Use this to find relevant starting points when you don't know exact names/values
+   - Returned IDs are Neo4j elementId values; use them directly in expand_node or Cypher
 
 3. **expand_node**: Expand from a node to find connected nodes and relationships
-   - Use this to explore the neighborhood of a known node
+   - Use this to explore the neighborhood of a known node by elementId
 
 4. **submit_answer**: Submit your final answer when confident
    - Include supporting evidence from your queries
@@ -30,6 +31,7 @@ You have access to tools that allow you to explore the graph database iterativel
 3. Execute queries to gather information
 4. Iterate and refine your queries based on results
 5. Submit your answer when you have sufficient evidence
+6. Treat vector search result IDs as Neo4j elementId values; do not invent IDs
 
 Be precise with Cypher syntax. Use the exact node labels and relationship types from the schema.
 """

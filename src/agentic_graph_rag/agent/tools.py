@@ -31,7 +31,10 @@ AGENT_TOOLS: list[ToolDefinition] = [
     ),
     ToolDefinition(
         name="vector_search",
-        description="Search for nodes semantically similar to the given text",
+        description=(
+            "Search for nodes semantically similar to the given text. Returned IDs "
+            "are Neo4j elementId values."
+        ),
         parameters={
             "type": "object",
             "properties": {
@@ -50,7 +53,10 @@ AGENT_TOOLS: list[ToolDefinition] = [
     ),
     ToolDefinition(
         name="expand_node",
-        description=("Expand from a node to find connected nodes and relationships"),
+        description=(
+            "Expand from a node to find connected nodes and relationships using the "
+            "node's Neo4j elementId."
+        ),
         parameters={
             "type": "object",
             "properties": {

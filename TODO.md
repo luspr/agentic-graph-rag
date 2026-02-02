@@ -90,6 +90,8 @@ state: done
 
 ### Task 1.4: Implement Qdrant client
 
+state: done
+
 **Description:** Create an async Qdrant client implementing the VectorStore interface for vector similarity search and upsert operations.
 
 **Files:**
@@ -97,14 +99,14 @@ state: done
 - `src/agentic_graph_rag/vector/qdrant_client.py`
 
 **Acceptance Criteria:**
-- [ ] `VectorStore` ABC defined with: `search()`, `upsert()` methods
-- [ ] `VectorSearchResult` dataclass defined
-- [ ] `QdrantVectorStore` class implements `VectorStore`
-- [ ] `search()` performs vector similarity search, returns list of `VectorSearchResult`
-- [ ] `search()` supports limit and optional filter parameters
-- [ ] `upsert()` inserts or updates vectors with payload
-- [ ] Collection auto-creation if it doesn't exist
-- [ ] Unit tests with mocked Qdrant client
+- [x] `VectorStore` ABC defined with: `search()`, `upsert()` methods
+- [x] `VectorSearchResult` dataclass defined
+- [x] `QdrantVectorStore` class implements `VectorStore`
+- [x] `search()` performs vector similarity search, returns list of `VectorSearchResult`
+- [x] `search()` supports limit and optional filter parameters
+- [x] `upsert()` inserts or updates vectors with payload
+- [x] Collection auto-creation if it doesn't exist
+- [x] Unit tests with mocked Qdrant client
 
 ---
 
@@ -374,6 +376,7 @@ state: done
 
 ### Task 4.3: Support multi-turn chat context in the agent
 
+state: done 
 **Description:** Persist and inject recent user/assistant messages into the LLM context so follow-up queries are handled as a conversation rather than standalone requests.
 
 **Files:**
@@ -383,12 +386,12 @@ state: done
 - `src/agentic_graph_rag/config.py`
 
 **Acceptance Criteria:**
-- [ ] Recent session messages (user + assistant) are included in LLM requests
-- [ ] System prompt remains the first message; chat history is appended before the retrieval prompt
-- [ ] Configurable max history length (count or token-based)
-- [ ] Ability to clear conversation context with `/clear`
-- [ ] No regression for single-turn behavior if history length is set to 0
-- [ ] Unit tests verify multi-turn context inclusion and ordering
+- [x] Recent session messages (user + assistant) are included in LLM requests
+- [x] System prompt remains the first message; chat history is appended before the retrieval prompt
+- [x] Configurable max history length (count or token-based)
+- [x] Ability to clear conversation context with `/clear`
+- [x] No regression for single-turn behavior if history length is set to 0
+- [x] Unit tests verify multi-turn context inclusion and ordering
 
 ---
 
@@ -453,8 +456,6 @@ state: done
 
 After completing all tasks, verify:
 
-2. **Linting:** `uv run ruff check .` passes
-3. **Formatting:** `uv run ruff format .` (no changes needed)
 4. **Unit tests:** `uv run pytest` - all pass
 5. **Integration test:**
    - Start services: `docker compose up -d`

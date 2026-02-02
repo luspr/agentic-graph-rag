@@ -30,7 +30,7 @@ def settings(monkeypatch: pytest.MonkeyPatch) -> Settings:
     monkeypatch.setenv("NEO4J_URI", "bolt://localhost:7687")
     monkeypatch.setenv("NEO4J_USER", "neo4j")
     monkeypatch.setenv("NEO4J_PASSWORD", "secretpassword")
-    return Settings()
+    return Settings(_env_file=None)
 
 
 # ---------------------------------------------------------------------------

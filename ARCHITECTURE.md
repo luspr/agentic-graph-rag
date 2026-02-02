@@ -202,6 +202,18 @@ class VectorStore(ABC):
         ...
 ```
 
+### Vector ↔ Graph ID Contract
+
+To support the hybrid retrieval flow, vector search must return identifiers that can be used
+directly in graph traversal. We standardize on **Neo4j elementId** as the canonical node
+identifier:
+
+- Qdrant point ID **must equal** the Neo4j `elementId` for the corresponding node.
+- `vector_search` returns IDs that can be passed directly to `expand_node`.
+- When querying by ID in Cypher, use `elementId(n) = $node_id`.
+
+This ensures the vector store acts as a reliable entry point into the knowledge graph.
+
 ### 4. Retriever Interface
 
 ```python
