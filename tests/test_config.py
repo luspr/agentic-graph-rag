@@ -11,7 +11,7 @@ def test_settings_loads_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("NEO4J_USER", "neo4j")
     monkeypatch.setenv("NEO4J_PASSWORD", "secret")
 
-    settings = Settings()
+    settings = Settings(_env_file=None)
 
     assert settings.openai_api_key == "sk-test-key"
     assert settings.neo4j_uri == "bolt://localhost:7687"
@@ -25,8 +25,16 @@ def test_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("NEO4J_URI", "bolt://localhost:7687")
     monkeypatch.setenv("NEO4J_USER", "neo4j")
     monkeypatch.setenv("NEO4J_PASSWORD", "secret")
+    for var in (
+        "OPENAI_MODEL",
+        "QDRANT_HOST",
+        "QDRANT_PORT",
+        "MAX_ITERATIONS",
+        "MAX_HISTORY_MESSAGES",
+    ):
+        monkeypatch.delenv(var, raising=False)
 
-    settings = Settings()
+    settings = Settings(_env_file=None)
 
     assert settings.openai_model == "gpt-5.2"
     assert settings.qdrant_host == "localhost"
@@ -47,7 +55,7 @@ def test_settings_overrides_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MAX_ITERATIONS", "5")
     monkeypatch.setenv("MAX_HISTORY_MESSAGES", "3")
 
-    settings = Settings()
+    settings = Settings(_env_file=None)
 
     assert settings.openai_model == "gpt-4o"
     assert settings.qdrant_host == "qdrant.example.com"
