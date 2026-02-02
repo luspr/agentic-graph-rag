@@ -1,6 +1,7 @@
 """Terminal UI using prompt_toolkit for input and rich for output."""
 
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +28,440 @@ from agentic_graph_rag.agent.tools import ToolRouter
 from agentic_graph_rag.graph.base import GraphDatabase
 from agentic_graph_rag.llm.base import LLMClient
 from agentic_graph_rag.prompts.manager import PromptManager
+
+
+def _read_key() -> str | None:
+    """Read a single keypress, handling arrow keys and special keys.
+
+    Returns:
+        String representing the key pressed:
+        - 'up', 'down', 'left', 'right' for arrow keys
+        - 'enter' for Enter key
+        - 'q', 'j', 'k', etc. for letter keys
+        - None if reading fails
+    """
+    try:
+        import termios
+        import tty
+
+        fd = sys.stdin.fileno()
+        old_settings = termios.tcgetattr(fd)
+        try:
+            tty.setraw(fd)
+            ch = sys.stdin.read(1)
+
+            # Handle escape sequences (arrow keys, etc.)
+            if ch == "\x1b":
+                # Read more characters for escape sequence
+                ch2 = sys.stdin.read(1)
+                if ch2 == "[":
+                    ch3 = sys.stdin.read(1)
+                    if ch3 == "A":
+                        return "up"
+                    elif ch3 == "B":
+                        return "down"
+                    elif ch3 == "C":
+                        return "right"
+                    elif ch3 == "D":
+                        return "left"
+                return "escape"
+
+            # Handle special keys
+            if ch == "\r" or ch == "\n":
+                return "enter"
+            if ch == "\x03":  # Ctrl+C
+                return "ctrl-c"
+            if ch == "\x04":  # Ctrl+D
+                return "ctrl-d"
+
+            return ch
+
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+    except (ImportError, OSError):
+        # Fallback for systems without termios
+        return None
+    except Exception:
+        # Handle termios.error which may not be defined
+        return None
+
+
+def _format_data_pretty(data: Any, indent: int = 0) -> Text:
+    """Format data structures for pretty display with colors.
+
+    Args:
+        data: The data to format (dict, list, str, etc.)
+        indent: Current indentation level.
+
+    Returns:
+        Rich Text object with colored formatting.
+    """
+    text = Text()
+    prefix = "  " * indent
+
+    if isinstance(data, dict):
+        if not data:
+            text.append("{}", style="dim")
+            return text
+        text.append("{\n", style="dim")
+        items = list(data.items())
+        for i, (key, value) in enumerate(items):
+            text.append(f"{prefix}  ")
+            text.append(f'"{key}"', style="cyan")
+            text.append(": ", style="dim")
+            text.append_text(_format_data_pretty(value, indent + 1))
+            if i < len(items) - 1:
+                text.append(",", style="dim")
+            text.append("\n")
+        text.append(f"{prefix}}}", style="dim")
+
+    elif isinstance(data, list):
+        if not data:
+            text.append("[]", style="dim")
+            return text
+        text.append("[\n", style="dim")
+        for i, item in enumerate(data):
+            text.append(f"{prefix}  ")
+            text.append_text(_format_data_pretty(item, indent + 1))
+            if i < len(data) - 1:
+                text.append(",", style="dim")
+            text.append("\n")
+        text.append(f"{prefix}]", style="dim")
+
+    elif isinstance(data, str):
+        # For multi-line strings, display them nicely
+        if "\n" in data or len(data) > 80:
+            lines = data.split("\n")
+            if len(lines) > 1:
+                text.append('"""', style="green")
+                text.append("\n")
+                for line in lines:
+                    text.append(f"{prefix}  ")
+                    text.append(line, style="green")
+                    text.append("\n")
+                text.append(f'{prefix}"""', style="green")
+            else:
+                # Long single line - wrap it
+                text.append(f'"{data}"', style="green")
+        else:
+            text.append(f'"{data}"', style="green")
+
+    elif isinstance(data, bool):
+        text.append(str(data).lower(), style="yellow")
+
+    elif isinstance(data, (int, float)):
+        text.append(str(data), style="magenta")
+
+    elif data is None:
+        text.append("null", style="dim italic")
+
+    else:
+        text.append(str(data), style="white")
+
+    return text
+
+
+class TraceInspector:
+    """Interactive trace inspector for exploring trace events."""
+
+    def __init__(
+        self,
+        console: Console,
+        trace_data: dict[str, Any],
+        interactive: bool = True,
+    ) -> None:
+        """Initialize the trace inspector.
+
+        Args:
+            console: Rich console for output.
+            trace_data: Exported trace data to inspect.
+            interactive: If False, just display the trace without interaction.
+        """
+        self._console = console
+        self._trace_data = trace_data
+        self._events: list[dict[str, Any]] = trace_data.get("events", [])
+        self._selected_index = 0
+        self._detail_view = False
+        self._running = True
+        self._interactive = interactive
+
+    def run(self) -> None:
+        """Run the interactive trace inspector."""
+        if not self._events:
+            self._console.print("[yellow]No events in trace.[/yellow]")
+            return
+
+        # Non-interactive mode: just render once
+        if not self._interactive:
+            self._render_list_view()
+            return
+
+        # Check if we can use raw key input
+        can_use_raw = _read_key() is None  # Test if termios works
+        # Actually let's just try - if _read_key returns None, we fall back
+        try:
+            import termios  # noqa: F401
+
+            can_use_raw = True
+        except ImportError:
+            can_use_raw = False
+
+        self._running = True
+        while self._running:
+            # Clear screen and render
+            self._console.clear()
+            self._console.print()
+            if self._detail_view:
+                self._render_detail_view()
+            else:
+                self._render_list_view()
+
+            # Show help footer
+            self._console.print()
+            if self._detail_view:
+                self._console.print(
+                    "[dim]  [cyan]q[/cyan]/[cyan]Esc[/cyan] back  "
+                    "[cyan]j[/cyan]/[cyan]↓[/cyan] next  "
+                    "[cyan]k[/cyan]/[cyan]↑[/cyan] prev[/dim]"
+                )
+            else:
+                self._console.print(
+                    "[dim]  [cyan]q[/cyan]/[cyan]Esc[/cyan] exit  "
+                    "[cyan]j[/cyan]/[cyan]↓[/cyan] down  "
+                    "[cyan]k[/cyan]/[cyan]↑[/cyan] up  "
+                    "[cyan]Enter[/cyan]/[cyan]v[/cyan] view  "
+                    "[cyan]1-9[/cyan] jump[/dim]"
+                )
+
+            # Get input
+            if can_use_raw:
+                key = _read_key()
+                if key is None:
+                    self._running = False
+                else:
+                    self._process_key(key)
+            else:
+                # Fallback to input() based interaction
+                try:
+                    self._console.print()
+                    self._console.print("[cyan]>[/cyan] ", end="")
+                    user_input = input().strip().lower()
+                    self._process_input_fallback(user_input)
+                except (EOFError, KeyboardInterrupt, OSError):
+                    self._running = False
+
+    def _process_key(self, key: str) -> None:
+        """Process a single keypress."""
+        if key in ("q", "Q", "escape"):
+            if self._detail_view:
+                self._detail_view = False
+            else:
+                self._running = False
+        elif key in ("j", "J", "down"):
+            self._move_selection(1)
+        elif key in ("k", "K", "up"):
+            self._move_selection(-1)
+        elif key in ("enter", "v", "V"):
+            self._toggle_detail_view()
+        elif key in ("b", "B", "left"):
+            if self._detail_view:
+                self._detail_view = False
+        elif key in ("ctrl-c", "ctrl-d"):
+            self._running = False
+        elif key.isdigit() and key != "0":
+            # Jump to specific event by number
+            idx = int(key) - 1
+            if 0 <= idx < len(self._events):
+                self._selected_index = idx
+                self._detail_view = True
+
+    def _process_input_fallback(self, user_input: str) -> None:
+        """Process user input in fallback mode (using input())."""
+        if user_input in ("q", "quit", "exit", "b", "back"):
+            if self._detail_view:
+                self._detail_view = False
+            else:
+                self._running = False
+        elif user_input in ("j", "down", "n", "next"):
+            self._move_selection(1)
+        elif user_input in ("k", "up", "p", "prev"):
+            self._move_selection(-1)
+        elif user_input in ("", "enter", "v", "view"):
+            self._toggle_detail_view()
+        elif user_input.isdigit():
+            idx = int(user_input) - 1
+            if 0 <= idx < len(self._events):
+                self._selected_index = idx
+                self._detail_view = True
+
+    def _render_list_view(self) -> None:
+        """Render the event list view."""
+        # Header
+        self._console.print(
+            Panel(Text("Trace Inspector", style="bold"), border_style="blue")
+        )
+
+        # Trace metadata
+        self._console.print(
+            f"[bold]Trace ID:[/bold] {self._trace_data['trace_id'][:36]}"
+        )
+        query = self._trace_data["query"]
+        if len(query) > 70:
+            query = query[:67] + "..."
+        self._console.print(f"[bold]Query:[/bold] {query}")
+        if self._trace_data.get("duration_ms"):
+            duration_sec = self._trace_data["duration_ms"] / 1000
+            self._console.print(f"[bold]Duration:[/bold] {duration_sec:.2f}s")
+        self._console.print()
+
+        # Events table
+        table = Table(show_header=True, header_style="bold", box=None, padding=(0, 1))
+        table.add_column("#", style="dim", width=3, justify="right")
+        table.add_column("Type", style="cyan", width=16)
+        table.add_column("Details", no_wrap=False, max_width=50)
+        table.add_column("Time", justify="right", width=8)
+
+        for i, event in enumerate(self._events):
+            event_type = event["event_type"]
+            details = self._format_event_summary(event)
+            duration = (
+                f"{event['duration_ms']:.0f}ms" if event.get("duration_ms") else "-"
+            )
+
+            # Highlight selected row with marker
+            if i == self._selected_index:
+                marker = ">"
+                num_style = "bold cyan"
+                type_style = "bold cyan"
+                detail_style = "bold"
+                time_style = "bold"
+            else:
+                marker = " "
+                num_style = "dim"
+                type_style = "cyan"
+                detail_style = ""
+                time_style = ""
+
+            table.add_row(
+                Text(f"{marker}{i + 1}", style=num_style),
+                Text(event_type, style=type_style),
+                Text(details[:48], style=detail_style),
+                Text(duration, style=time_style),
+            )
+
+        self._console.print(table)
+
+        # Result summary
+        if self._trace_data.get("result"):
+            result = self._trace_data["result"]
+            self._console.print()
+            confidence_str = (
+                f" | Confidence: {result['confidence']:.0%}"
+                if result.get("confidence")
+                else ""
+            )
+            self._console.print(
+                f"[bold]Result:[/bold] {result['status']} | "
+                f"Iterations: {result['iterations']}{confidence_str}"
+            )
+
+    def _render_detail_view(self) -> None:
+        """Render the detail view for the selected event."""
+        event = self._events[self._selected_index]
+
+        # Header
+        title = f"Event {self._selected_index + 1}/{len(self._events)}: {event['event_type']}"
+        self._console.print(Panel(Text(title, style="bold"), border_style="cyan"))
+
+        # Event metadata
+        self._console.print(f"[bold]Type:[/bold] [cyan]{event['event_type']}[/cyan]")
+        self._console.print(f"[bold]Timestamp:[/bold] {event['timestamp']}")
+        if event.get("duration_ms"):
+            self._console.print(f"[bold]Duration:[/bold] {event['duration_ms']:.0f}ms")
+        self._console.print()
+
+        # Data payload
+        self._console.print("[bold]Data:[/bold]")
+        data = event.get("data", {})
+        if data:
+            formatted = _format_data_pretty(data)
+            self._console.print(Panel(formatted, border_style="dim", padding=(0, 1)))
+        else:
+            self._console.print("[dim](no data)[/dim]")
+
+        # Special handling for llm_request - show message previews
+        if event["event_type"] == "llm_request" and "messages" in data:
+            self._console.print()
+            self._console.print("[bold]Messages Preview:[/bold]")
+            for i, msg in enumerate(data.get("messages", [])[:5]):
+                role = msg.get("role", "unknown")
+                content = str(msg.get("content", ""))[:80]
+                if len(str(msg.get("content", ""))) > 80:
+                    content += "..."
+                role_colors = {
+                    "system": "yellow",
+                    "user": "green",
+                    "assistant": "blue",
+                    "tool": "magenta",
+                }
+                color = role_colors.get(role, "white")
+                self._console.print(f"  [{color}]{i + 1}. {role}:[/{color}] {content}")
+
+    def _format_event_summary(self, event: dict[str, Any]) -> str:
+        """Format event details as a brief summary for list view."""
+        data = event.get("data", {})
+        event_type = event["event_type"]
+
+        if event_type == "query_start":
+            query = data.get("query", "")
+            return (
+                f'Query: "{query[:45]}..."' if len(query) > 45 else f'Query: "{query}"'
+            )
+
+        elif event_type == "iteration_start":
+            return f"Iteration {data.get('iteration', '?')}"
+
+        elif event_type == "tool_call":
+            tool_name = data.get("tool_name", "unknown")
+            args = data.get("arguments", {})
+            if tool_name == "execute_cypher":
+                query = args.get("query", "")[:35]
+                return f"{tool_name}: {query}..."
+            elif tool_name == "submit_answer":
+                return f"{tool_name}: confidence={args.get('confidence', '?')}"
+            return f"{tool_name}"
+
+        elif event_type == "tool_result":
+            success = data.get("success", False)
+            return "success" if success else "failed"
+
+        elif event_type == "llm_request":
+            return f"{data.get('messages_count', '?')} messages"
+
+        elif event_type == "llm_response":
+            return f"{data.get('tool_calls_count', 0)} tool calls"
+
+        elif event_type == "error":
+            return data.get("error", "Unknown error")[:50]
+
+        elif event_type == "complete":
+            return data.get("status", "completed")
+
+        elif event_type == "max_iterations":
+            return f"Reached {data.get('iterations', '?')}/{data.get('max', '?')}"
+
+        return json.dumps(data)[:45] + "..." if data else "-"
+
+    def _move_selection(self, delta: int) -> None:
+        """Move the selection by delta."""
+        self._selected_index = max(
+            0, min(len(self._events) - 1, self._selected_index + delta)
+        )
+
+    def _toggle_detail_view(self) -> None:
+        """Toggle between list and detail view."""
+        self._detail_view = not self._detail_view
 
 
 class UITracer(Tracer):
@@ -94,7 +529,7 @@ class TerminalUI:
     COMMANDS = {
         "/quit": "Exit the application",
         "/clear": "Clear the current session and start fresh",
-        "/trace": "Show details of the last query trace",
+        "/trace": "Open interactive trace inspector for the last query",
         "/help": "Show available commands",
     }
 
@@ -327,7 +762,7 @@ class TerminalUI:
         self._console.print("[green]Session cleared.[/green]")
 
     def _show_trace(self) -> None:
-        """Show details of the last trace."""
+        """Show interactive trace inspector for the last trace."""
         if self._last_trace is None:
             self._console.print(
                 "[yellow]No trace available. Run a query first.[/yellow]"
@@ -335,46 +770,8 @@ class TerminalUI:
             return
 
         trace_data = self._tracer.export(self._last_trace)
-
-        # Header
-        self._console.print()
-        self._console.print(f"[bold]Trace ID:[/bold] {trace_data['trace_id']}")
-        self._console.print(f"[bold]Query:[/bold] {trace_data['query']}")
-
-        if trace_data.get("duration_ms"):
-            duration_sec = trace_data["duration_ms"] / 1000
-            self._console.print(f"[bold]Duration:[/bold] {duration_sec:.2f}s")
-
-        # Events table
-        if trace_data.get("events"):
-            self._console.print()
-            self._console.print("[bold]Events:[/bold]")
-
-            table = Table(show_header=True, header_style="bold")
-            table.add_column("Type", style="cyan")
-            table.add_column("Details")
-            table.add_column("Duration", justify="right")
-
-            for event in trace_data["events"]:
-                event_type = event["event_type"]
-                details = self._format_event_details(event)
-                duration = (
-                    f"{event['duration_ms']:.0f}ms" if event.get("duration_ms") else "-"
-                )
-                table.add_row(event_type, details, duration)
-
-            self._console.print(table)
-
-        # Result summary
-        if trace_data.get("result"):
-            result = trace_data["result"]
-            self._console.print()
-            self._console.print(f"[bold]Result:[/bold] {result['status']}")
-            self._console.print(f"[bold]Iterations:[/bold] {result['iterations']}")
-            if result.get("confidence"):
-                self._console.print(
-                    f"[bold]Confidence:[/bold] {result['confidence']:.0%}"
-                )
+        inspector = TraceInspector(self._console, trace_data)
+        inspector.run()
 
     def _format_event_details(self, event: dict[str, Any]) -> str:
         """Format event details for display."""
