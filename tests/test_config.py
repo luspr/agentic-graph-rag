@@ -62,4 +62,5 @@ def test_settings_missing_required_raises(monkeypatch: pytest.MonkeyPatch) -> No
         monkeypatch.delenv(var, raising=False)
 
     with pytest.raises(ValidationError):
-        Settings()
+        # Use _env_file=None to prevent loading from .env file during test
+        Settings(_env_file=None)

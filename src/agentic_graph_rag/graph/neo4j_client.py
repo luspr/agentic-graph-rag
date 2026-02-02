@@ -2,7 +2,7 @@ from collections import defaultdict
 from types import TracebackType
 from typing import Any
 
-from neo4j import AsyncDriver
+from neo4j import AsyncDriver, NotificationDisabledClassification
 from neo4j import AsyncGraphDatabase as Neo4jAsyncGraphDatabase
 from neo4j.exceptions import Neo4jError
 
@@ -46,6 +46,10 @@ class Neo4jClient(GraphDatabase):
         self._driver = Neo4jAsyncGraphDatabase.driver(
             self._settings.neo4j_uri,
             auth=(self._settings.neo4j_user, self._settings.neo4j_password),
+            notifications_disabled_classifications=[
+                NotificationDisabledClassification.DEPRECATION,
+                NotificationDisabledClassification.GENERIC,
+            ],
         )
         return self
 
