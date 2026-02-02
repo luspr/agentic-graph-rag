@@ -1,5 +1,6 @@
 """Agent controller for running the iterative retrieval loop."""
 
+import json
 from typing import Any, Protocol
 
 from agentic_graph_rag.agent.state import (
@@ -136,9 +137,26 @@ class AgentController:
             },
         )
 
-        # Add assistant message to conversation
+        # Add assistant message to conversation with tool_calls if present
+        assistant_message: dict[str, Any] = {"role": "assistant"}
         if response.content:
-            self._messages.append({"role": "assistant", "content": response.content})
+            assistant_message["content"] = response.content
+
+        # Include tool_calls in the message for OpenAI API compatibility
+        if response.tool_calls:
+            assistant_message["tool_calls"] = [
+                {
+                    "id": tc.id,
+                    "type": "function",
+                    "function": {
+                        "name": tc.name,
+                        "arguments": json.dumps(tc.arguments),
+                    },
+                }
+                for tc in response.tool_calls
+            ]
+
+        self._messages.append(assistant_message)
 
         # Handle no tool calls (shouldn't happen with proper prompting)
         if not response.tool_calls:

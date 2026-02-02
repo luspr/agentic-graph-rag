@@ -316,6 +316,8 @@ state: done
 
 ### Task 4.1: Implement terminal UI
 
+state: done
+
 **Description:** Create an interactive terminal UI using prompt_toolkit for input and rich for formatted output.
 
 **Files:**
@@ -323,16 +325,17 @@ state: done
 - `src/agentic_graph_rag/main.py`
 
 **Acceptance Criteria:**
-- [ ] Main loop using prompt_toolkit for user input with history
-- [ ] Rich console for formatted output
-- [ ] Display agent iteration progress (e.g., "Iteration 2/10: Executing Cypher query...")
-- [ ] Display final answer with confidence and supporting evidence
-- [ ] Command to show trace details (e.g., `/trace`)
-- [ ] Command to exit (e.g., `/quit` or Ctrl+C)
-- [ ] Command to clear session (e.g., `/clear`)
-- [ ] Graceful error handling with user-friendly messages
-- [ ] Entry point in main.py that initializes components and starts UI
-- [ ] `pyrefly check` passes
+- [x] Main loop using prompt_toolkit for user input with history
+- [x] Rich console for formatted output
+- [x] Display agent iteration progress (e.g., "Iteration 2/10: Executing Cypher query...")
+- [x] Display final answer with confidence and supporting evidence
+- [x] Command to show trace details (e.g., `/trace`)
+- [x] Command to exit (e.g., `/quit` or Ctrl+C)
+- [x] Command to clear session (e.g., `/clear`)
+- [x] Graceful error handling with user-friendly messages
+- [x] Entry point in main.py that initializes components and starts UI
+- [x] Unit tests for TerminalUI and UITracer (41 tests)
+- [x] `pyrefly check` passes
 
 ---
 
