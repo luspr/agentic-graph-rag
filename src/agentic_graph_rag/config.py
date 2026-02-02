@@ -22,6 +22,7 @@ class Settings(BaseSettings):
 
     # Agent
     max_iterations: int = Field(default=10, ge=1)
+    max_history_messages: int = Field(default=10, ge=0)
 
     # Trace Logging
     trace_log_dir: str = "logs"

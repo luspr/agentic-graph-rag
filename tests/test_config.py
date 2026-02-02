@@ -32,6 +32,7 @@ def test_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.qdrant_host == "localhost"
     assert settings.qdrant_port == 6333
     assert settings.max_iterations == 10
+    assert settings.max_history_messages == 10
 
 
 def test_settings_overrides_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -44,6 +45,7 @@ def test_settings_overrides_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("QDRANT_HOST", "qdrant.example.com")
     monkeypatch.setenv("QDRANT_PORT", "6334")
     monkeypatch.setenv("MAX_ITERATIONS", "5")
+    monkeypatch.setenv("MAX_HISTORY_MESSAGES", "3")
 
     settings = Settings()
 
@@ -51,6 +53,7 @@ def test_settings_overrides_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.qdrant_host == "qdrant.example.com"
     assert settings.qdrant_port == 6334
     assert settings.max_iterations == 5
+    assert settings.max_history_messages == 3
 
 
 def test_settings_missing_required_raises(monkeypatch: pytest.MonkeyPatch) -> None:

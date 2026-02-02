@@ -161,13 +161,19 @@ def test_agent_config_defaults() -> None:
     """AgentConfig has expected defaults."""
     config = AgentConfig()
     assert config.max_iterations == 10
+    assert config.max_history_messages == 10
     assert config.strategy == RetrievalStrategy.CYPHER
 
 
 def test_agent_config_custom_values() -> None:
     """AgentConfig accepts custom values."""
-    config = AgentConfig(max_iterations=5, strategy=RetrievalStrategy.HYBRID)
+    config = AgentConfig(
+        max_iterations=5,
+        max_history_messages=4,
+        strategy=RetrievalStrategy.HYBRID,
+    )
     assert config.max_iterations == 5
+    assert config.max_history_messages == 4
     assert config.strategy == RetrievalStrategy.HYBRID
 
 
@@ -393,6 +399,61 @@ async def test_run_gets_schema_at_start(
     await controller.run("Query")
 
     mock_graph_db.get_schema.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_run_includes_history_messages_in_order(
+    controller: AgentController,
+    mock_llm_client: MagicMock,
+    mock_tool_router: MagicMock,
+) -> None:
+    """run() includes prior chat history before the retrieval prompt."""
+    history = [
+        {"role": "user", "content": "First question"},
+        {"role": "assistant", "content": "First answer"},
+    ]
+    mock_llm_client.complete.return_value = _make_llm_response(
+        tool_calls=[_submit_answer_tool_call()]
+    )
+    mock_tool_router.route.return_value = {
+        "success": True,
+        "answer": "Answer",
+        "confidence": 0.8,
+        "supporting_evidence": "Evidence",
+    }
+
+    await controller.run("Current question", history_messages=history)
+
+    call = mock_llm_client.complete.await_args
+    messages = call.kwargs["messages"]
+    assert messages[0]["role"] == "system"
+    assert messages[1:3] == history
+    assert messages[3]["role"] == "user"
+    assert "Current question" in messages[3]["content"]
+
+
+@pytest.mark.anyio
+async def test_run_with_empty_history_does_not_add_messages(
+    controller: AgentController,
+    mock_llm_client: MagicMock,
+    mock_tool_router: MagicMock,
+) -> None:
+    """run() does not include history when none is provided."""
+    mock_llm_client.complete.return_value = _make_llm_response(
+        tool_calls=[_submit_answer_tool_call()]
+    )
+    mock_tool_router.route.return_value = {
+        "success": True,
+        "answer": "Answer",
+        "confidence": 0.8,
+        "supporting_evidence": "Evidence",
+    }
+
+    await controller.run("Query", history_messages=[])
+
+    call = mock_llm_client.complete.await_args
+    messages = call.kwargs["messages"]
+    assert len(messages) == 2
 
 
 # --- Tracer integration tests ---

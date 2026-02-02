@@ -212,6 +212,9 @@ class TerminalUI:
         if self._session is None:
             self._session = self._session_manager.create_session()
 
+        history_messages = self._session_manager.get_context_messages(
+            self._session, max_messages=self._config.max_history_messages
+        )
         self._session_manager.add_message(self._session, "user", query)
 
         # Start trace
@@ -228,7 +231,9 @@ class TerminalUI:
         )
 
         # Run with progress display
-        result = await self._run_with_progress(controller, query)
+        result = await self._run_with_progress(
+            controller, query, history_messages=history_messages
+        )
 
         # End trace
         self._tracer.end_trace(trace, result)
@@ -243,7 +248,10 @@ class TerminalUI:
         )
 
     async def _run_with_progress(
-        self, controller: AgentController, query: str
+        self,
+        controller: AgentController,
+        query: str,
+        history_messages: list[dict[str, Any]] | None = None,
     ) -> AgentResult:
         """Run the agent with a live progress display."""
         progress = Progress(
@@ -257,7 +265,7 @@ class TerminalUI:
             task_id = progress.add_task("Starting...", total=None)
             self._tracer.set_live_context(live, progress, task_id)
 
-            result = await controller.run(query)
+            result = await controller.run(query, history_messages=history_messages)
 
             self._tracer.set_live_context(None, None, None)  # type: ignore[arg-type]
 
