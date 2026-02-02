@@ -61,7 +61,10 @@ async def main() -> int:
 
         # Create prompt manager and config
         prompt_manager = PromptManager()
-        config = AgentConfig(max_iterations=settings.max_iterations)
+        config = AgentConfig(
+            max_iterations=settings.max_iterations,
+            max_history_messages=settings.max_history_messages,
+        )
 
         # Set up trace logging if enabled
         trace_log_file = None

@@ -31,6 +31,7 @@ class AgentConfig:
     """Configuration for the agent."""
 
     max_iterations: int = 10
+    max_history_messages: int = 10
     strategy: RetrievalStrategy = RetrievalStrategy.CYPHER
 
 

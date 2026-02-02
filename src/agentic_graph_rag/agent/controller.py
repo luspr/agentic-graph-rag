@@ -64,11 +64,17 @@ class AgentController:
         self._user_query: str = ""
         self._messages: list[dict[str, Any]] = []
 
-    async def run(self, user_query: str) -> AgentResult:
+    async def run(
+        self,
+        user_query: str,
+        history_messages: list[dict[str, Any]] | None = None,
+    ) -> AgentResult:
         """Run the agent until completion or max iterations.
 
         Args:
             user_query: The user's question to answer.
+            history_messages: Prior user/assistant messages to include before
+                the current prompt.
 
         Returns:
             AgentResult containing the answer and execution metadata.
@@ -87,6 +93,8 @@ class AgentController:
         system_prompt = self._prompt_manager.build_system_prompt(schema)
 
         self._messages = [{"role": "system", "content": system_prompt}]
+        if history_messages:
+            self._messages.extend(history_messages)
 
         # Build initial context for the LLM
         context = PromptContext(
@@ -123,9 +131,10 @@ class AgentController:
             },
         )
 
+        request_messages = list(self._messages)
         try:
             response = await self._llm_client.complete(
-                messages=self._messages,
+                messages=request_messages,
                 tools=AGENT_TOOLS,
             )
         except Exception as e:

@@ -17,7 +17,7 @@ repos:
 
       - id: unit-tests
         name: unit tests
-        entry: uv run pytest
+        entry: uv run pytest --cov=agentic_graph_rag --cov-report=term-missing --cov-fail-under=82
         language: system
         pass_filenames: false
         types: [python]

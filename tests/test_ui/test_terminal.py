@@ -461,7 +461,7 @@ def test_terminal_ui_uses_config(
     prompt_manager: PromptManager,
 ) -> None:
     """TerminalUI uses provided config."""
-    config = AgentConfig(max_iterations=5)
+    config = AgentConfig(max_iterations=5, max_history_messages=4)
     ui = TerminalUI(
         llm_client=mock_llm_client,
         graph_db=mock_graph_db,
@@ -470,11 +470,13 @@ def test_terminal_ui_uses_config(
         config=config,
     )
     assert ui._config.max_iterations == 5
+    assert ui._config.max_history_messages == 4
 
 
 def test_terminal_ui_default_config(terminal_ui: TerminalUI) -> None:
     """TerminalUI uses default config if not provided."""
     assert terminal_ui._config.max_iterations == 10
+    assert terminal_ui._config.max_history_messages == 10
 
 
 # --- TerminalUI session handling ---
