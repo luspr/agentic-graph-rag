@@ -22,3 +22,7 @@ class Settings(BaseSettings):
 
     # Agent
     max_iterations: int = Field(default=10, ge=1)
+
+    # Trace Logging
+    trace_log_dir: str = "logs"
+    trace_logging_enabled: bool = True

@@ -1,6 +1,7 @@
 """Terminal UI using prompt_toolkit for input and rich for output."""
 
 import json
+from pathlib import Path
 from typing import Any
 
 from prompt_toolkit import PromptSession
@@ -31,13 +32,14 @@ from agentic_graph_rag.prompts.manager import PromptManager
 class UITracer(Tracer):
     """Extended tracer that also updates the UI during agent execution."""
 
-    def __init__(self, console: Console) -> None:
+    def __init__(self, console: Console, log_file: Path | str | None = None) -> None:
         """Initialize the UI tracer.
 
         Args:
             console: Rich console for output.
+            log_file: Optional path to a JSONL file for persisting events.
         """
-        super().__init__()
+        super().__init__(log_file=log_file)
         self._console = console
         self._current_iteration = 0
         self._max_iterations = 10
@@ -103,6 +105,7 @@ class TerminalUI:
         tool_router: ToolRouter,
         prompt_manager: PromptManager,
         config: AgentConfig | None = None,
+        trace_log_file: Path | str | None = None,
     ) -> None:
         """Initialize the terminal UI.
 
@@ -112,6 +115,7 @@ class TerminalUI:
             tool_router: Router for dispatching tool calls.
             prompt_manager: Manager for building prompts.
             config: Agent configuration.
+            trace_log_file: Optional path to a JSONL file for trace persistence.
         """
         self._llm_client = llm_client
         self._graph_db = graph_db
@@ -122,7 +126,7 @@ class TerminalUI:
         self._console = Console()
         self._session_manager = SessionManager()
         self._session: Session | None = None
-        self._tracer = UITracer(self._console)
+        self._tracer = UITracer(self._console, log_file=trace_log_file)
         self._tracer.set_max_iterations(self._config.max_iterations)
         self._last_trace: Trace | None = None
 

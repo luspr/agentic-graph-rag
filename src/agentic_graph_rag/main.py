@@ -1,6 +1,8 @@
 """Entry point for Agentic Graph RAG application."""
 
 import sys
+from datetime import datetime
+from pathlib import Path
 
 import anyio
 from pydantic import ValidationError
@@ -61,6 +63,12 @@ async def main() -> int:
         prompt_manager = PromptManager()
         config = AgentConfig(max_iterations=settings.max_iterations)
 
+        # Set up trace logging if enabled
+        trace_log_file = None
+        if settings.trace_logging_enabled:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            trace_log_file = Path(settings.trace_log_dir) / f"trace_{timestamp}.jsonl"
+
         # Create and run UI
         ui = TerminalUI(
             llm_client=llm_client,
@@ -68,6 +76,7 @@ async def main() -> int:
             tool_router=tool_router,
             prompt_manager=prompt_manager,
             config=config,
+            trace_log_file=trace_log_file,
         )
 
         try:

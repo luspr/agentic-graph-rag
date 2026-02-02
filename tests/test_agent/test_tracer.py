@@ -1,7 +1,8 @@
 """Unit tests for the Tracer module."""
 
+import json
 from datetime import datetime
-
+from pathlib import Path
 
 from agentic_graph_rag.agent.state import AgentResult, AgentStatus
 from agentic_graph_rag.agent.tracer import Trace, TraceEvent, Tracer
@@ -51,15 +52,17 @@ def test_trace_event_accepts_duration() -> None:
 
 
 def test_trace_has_required_fields() -> None:
-    """Trace has trace_id, query, started_at fields."""
+    """Trace has trace_id, run_id, query, started_at fields."""
     now = datetime.now()
     trace = Trace(
         trace_id="abc-123",
+        run_id="run-456",
         query="What is The Matrix?",
         started_at=now,
     )
 
     assert trace.trace_id == "abc-123"
+    assert trace.run_id == "run-456"
     assert trace.query == "What is The Matrix?"
     assert trace.started_at == now
 
@@ -68,6 +71,7 @@ def test_trace_events_default_empty() -> None:
     """Trace events defaults to empty list."""
     trace = Trace(
         trace_id="test",
+        run_id="run-test",
         query="test",
         started_at=datetime.now(),
     )
@@ -79,6 +83,7 @@ def test_trace_completed_at_defaults_none() -> None:
     """Trace completed_at defaults to None."""
     trace = Trace(
         trace_id="test",
+        run_id="run-test",
         query="test",
         started_at=datetime.now(),
     )
@@ -90,6 +95,7 @@ def test_trace_result_defaults_none() -> None:
     """Trace result defaults to None."""
     trace = Trace(
         trace_id="test",
+        run_id="run-test",
         query="test",
         started_at=datetime.now(),
     )
@@ -489,3 +495,283 @@ def test_all_event_types_can_be_logged() -> None:
     assert trace is not None
     logged_types = {e.event_type for e in trace.events}
     assert logged_types == set(event_types)
+
+
+# --- JSONL file logging tests ---
+
+
+def test_tracer_accepts_log_file_path(tmp_path: Path) -> None:
+    """Tracer accepts a log file path on initialization."""
+    log_file = tmp_path / "trace.jsonl"
+
+    tracer = Tracer(log_file=log_file)
+
+    assert tracer._log_file == log_file
+
+
+def test_trace_has_run_id() -> None:
+    """Trace includes a run_id field."""
+    tracer = Tracer()
+
+    trace = tracer.start_trace("Query")
+
+    assert hasattr(trace, "run_id")
+    assert trace.run_id is not None
+    assert len(trace.run_id) > 0
+
+
+def test_start_trace_generates_unique_run_ids() -> None:
+    """start_trace generates unique run IDs."""
+    tracer = Tracer()
+
+    trace1 = tracer.start_trace("Query 1")
+    trace2 = tracer.start_trace("Query 2")
+
+    assert trace1.run_id != trace2.run_id
+
+
+def test_jsonl_file_created_on_first_event(tmp_path: Path) -> None:
+    """JSONL file is created when first event is logged."""
+    log_file = tmp_path / "trace.jsonl"
+    tracer = Tracer(log_file=log_file)
+
+    tracer.start_trace("Test query")
+
+    assert log_file.exists()
+
+
+def test_events_written_to_jsonl_file(tmp_path: Path) -> None:
+    """Events are written to JSONL file as they occur."""
+    log_file = tmp_path / "trace.jsonl"
+    tracer = Tracer(log_file=log_file)
+
+    tracer.start_trace("Test query")
+    tracer.log_event("tool_call", {"tool": "execute_cypher"})
+
+    # Read the JSONL file
+    with open(log_file, encoding="utf-8") as f:
+        lines = f.readlines()
+
+    # Should have 2 events: query_start + tool_call
+    assert len(lines) == 2
+
+
+def test_jsonl_event_structure(tmp_path: Path) -> None:
+    """JSONL events have correct structure with run_id, trace_id, etc."""
+    log_file = tmp_path / "trace.jsonl"
+    tracer = Tracer(log_file=log_file)
+
+    trace = tracer.start_trace("Test query")
+    tracer.log_event("tool_call", {"tool": "execute_cypher"})
+
+    # Read the last event
+    with open(log_file, encoding="utf-8") as f:
+        lines = f.readlines()
+        event = json.loads(lines[-1])
+
+    assert event["run_id"] == trace.run_id
+    assert event["trace_id"] == trace.trace_id
+    assert event["event_type"] == "tool_call"
+    assert "timestamp" in event
+    assert event["data"] == {"tool": "execute_cypher"}
+
+
+def test_jsonl_includes_duration_when_present(tmp_path: Path) -> None:
+    """JSONL events include duration_ms when available."""
+    log_file = tmp_path / "trace.jsonl"
+    tracer = Tracer(log_file=log_file)
+
+    tracer.start_trace("Query")
+    tracer.start_timed_event("call_123")
+    tracer.log_event("tool_result", {"tool_id": "call_123"})
+
+    # Read the last event
+    with open(log_file, encoding="utf-8") as f:
+        lines = f.readlines()
+        event = json.loads(lines[-1])
+
+    assert "duration_ms" in event
+    assert event["duration_ms"] >= 0
+
+
+def test_jsonl_omits_duration_when_not_present(tmp_path: Path) -> None:
+    """JSONL events omit duration_ms when not available."""
+    log_file = tmp_path / "trace.jsonl"
+    tracer = Tracer(log_file=log_file)
+
+    tracer.start_trace("Query")
+    tracer.log_event("test", {"key": "value"})
+
+    # Read the last event
+    with open(log_file, encoding="utf-8") as f:
+        lines = f.readlines()
+        event = json.loads(lines[-1])
+
+    assert "duration_ms" not in event
+
+
+def test_jsonl_file_appends_events(tmp_path: Path) -> None:
+    """JSONL file is opened in append mode."""
+    log_file = tmp_path / "trace.jsonl"
+
+    # Write with first tracer
+    tracer1 = Tracer(log_file=log_file)
+    tracer1.start_trace("Query 1")
+    tracer1.close()
+
+    # Write with second tracer
+    tracer2 = Tracer(log_file=log_file)
+    tracer2.start_trace("Query 2")
+    tracer2.close()
+
+    # Read all lines
+    with open(log_file, encoding="utf-8") as f:
+        lines = f.readlines()
+
+    # Should have 2 events (one from each tracer)
+    assert len(lines) == 2
+
+
+def test_jsonl_handles_complex_data(tmp_path: Path) -> None:
+    """JSONL correctly serializes complex nested data."""
+    log_file = tmp_path / "trace.jsonl"
+    tracer = Tracer(log_file=log_file)
+
+    tracer.start_trace("Query")
+    complex_data = {
+        "messages": [
+            {"role": "system", "content": "You are a helpful assistant"},
+            {"role": "user", "content": "What is Neo4j?"},
+        ],
+        "tools": ["execute_cypher", "vector_search"],
+        "config": {"temperature": 0.7, "max_tokens": 1000},
+    }
+    tracer.log_event("llm_request", complex_data)
+
+    # Read and parse the event
+    with open(log_file, encoding="utf-8") as f:
+        lines = f.readlines()
+        event = json.loads(lines[-1])
+
+    assert event["data"] == complex_data
+
+
+def test_jsonl_write_failure_is_graceful(tmp_path: Path) -> None:
+    """Tracer handles JSONL write failures without crashing."""
+    log_file = tmp_path / "readonly" / "trace.jsonl"
+
+    # Don't create the directory - this will cause write to fail
+    tracer = Tracer(log_file=log_file)
+
+    # Should not raise exception
+    trace = tracer.start_trace("Query")
+    tracer.log_event("test", {"data": "value"})
+
+    # Events should still be in memory
+    assert len(trace.events) == 2
+
+
+def test_tracer_close_closes_file(tmp_path: Path) -> None:
+    """Tracer.close() closes the log file."""
+    log_file = tmp_path / "trace.jsonl"
+    tracer = Tracer(log_file=log_file)
+
+    tracer.start_trace("Query")
+    tracer.close()
+
+    assert tracer._log_file_handle is None
+
+
+def test_tracer_del_closes_file(tmp_path: Path) -> None:
+    """Tracer.__del__() ensures file is closed."""
+    log_file = tmp_path / "trace.jsonl"
+    tracer = Tracer(log_file=log_file)
+
+    tracer.start_trace("Query")
+    del tracer
+
+    # File should be readable (not locked)
+    with open(log_file, encoding="utf-8") as f:
+        lines = f.readlines()
+    assert len(lines) == 1
+
+
+def test_llm_request_with_full_messages(tmp_path: Path) -> None:
+    """LLM request events can include full message list."""
+    log_file = tmp_path / "trace.jsonl"
+    tracer = Tracer(log_file=log_file)
+
+    tracer.start_trace("Query")
+    messages = [
+        {"role": "system", "content": "You are a graph database assistant."},
+        {"role": "user", "content": "Find all actors in The Matrix."},
+    ]
+    tracer.log_event("llm_request", {"messages": messages, "messages_count": 2})
+
+    # Read the event
+    with open(log_file, encoding="utf-8") as f:
+        lines = f.readlines()
+        event = json.loads(lines[-1])
+
+    assert event["event_type"] == "llm_request"
+    assert event["data"]["messages"] == messages
+    assert event["data"]["messages_count"] == 2
+
+
+def test_system_prompt_captured_in_messages(tmp_path: Path) -> None:
+    """System prompt is captured verbatim in LLM request messages."""
+    log_file = tmp_path / "trace.jsonl"
+    tracer = Tracer(log_file=log_file)
+
+    tracer.start_trace("Query")
+    system_prompt = (
+        "You are an expert graph database assistant. "
+        "Use Cypher queries to retrieve information from Neo4j."
+    )
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": "What movies has Tom Hanks acted in?"},
+    ]
+    tracer.log_event("llm_request", {"messages": messages})
+
+    # Read and verify
+    with open(log_file, encoding="utf-8") as f:
+        lines = f.readlines()
+        event = json.loads(lines[-1])
+
+    assert event["data"]["messages"][0]["role"] == "system"
+    assert event["data"]["messages"][0]["content"] == system_prompt
+
+
+def test_multiple_traces_have_different_run_ids(tmp_path: Path) -> None:
+    """Multiple traces from same tracer have different run_ids."""
+    log_file = tmp_path / "trace.jsonl"
+    tracer = Tracer(log_file=log_file)
+
+    trace1 = tracer.start_trace("Query 1")
+    trace2 = tracer.start_trace("Query 2")
+
+    # Read all events
+    with open(log_file, encoding="utf-8") as f:
+        lines = f.readlines()
+        event1 = json.loads(lines[0])
+        event2 = json.loads(lines[1])
+
+    assert event1["run_id"] == trace1.run_id
+    assert event2["run_id"] == trace2.run_id
+    assert event1["run_id"] != event2["run_id"]
+
+
+def test_jsonl_timestamp_is_iso_format(tmp_path: Path) -> None:
+    """JSONL event timestamps are in ISO format."""
+    log_file = tmp_path / "trace.jsonl"
+    tracer = Tracer(log_file=log_file)
+
+    tracer.start_trace("Query")
+
+    with open(log_file, encoding="utf-8") as f:
+        event = json.loads(f.readline())
+
+    # Should be parseable as ISO format
+    parsed = datetime.fromisoformat(event["timestamp"])
+    assert isinstance(parsed, datetime)
