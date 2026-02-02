@@ -273,38 +273,42 @@ state: done
 
 ### Task 3.4: Implement tracer
 
+state: done
+
 **Description:** Create a structured tracer for recording agent execution events for debugging and analysis.
 
 **Files:** `src/agentic_graph_rag/agent/tracer.py`
 
 **Acceptance Criteria:**
-- [ ] `TraceEvent` dataclass: timestamp, event_type, data, duration_ms
-- [ ] `Trace` dataclass: trace_id, query, started_at, events, completed_at, result
-- [ ] `Tracer` class with: `start_trace()`, `log_event()`, `end_trace()`, `export()`
-- [ ] Event types include: "query_start", "tool_call", "tool_result", "llm_request", "llm_response", "error", "complete"
-- [ ] `export()` returns JSON-serializable dict
-- [ ] Duration tracking for tool calls and LLM requests
-- [ ] Unit tests verifying trace structure
-- [ ] `pyrefly check` passes
+- [x] `TraceEvent` dataclass: timestamp, event_type, data, duration_ms
+- [x] `Trace` dataclass: trace_id, query, started_at, events, completed_at, result
+- [x] `Tracer` class with: `start_trace()`, `log_event()`, `end_trace()`, `export()`
+- [x] Event types include: "query_start", "tool_call", "tool_result", "llm_request", "llm_response", "error", "complete"
+- [x] `export()` returns JSON-serializable dict
+- [x] Duration tracking for tool calls and LLM requests
+- [x] Unit tests verifying trace structure (36 tests)
+- [x] `pyrefly check` passes
 
 ---
 
 ### Task 3.5: Implement session manager
+
+state: done
 
 **Description:** Create a session manager to maintain conversation history across multiple user queries within a session.
 
 **Files:** `src/agentic_graph_rag/agent/session.py`
 
 **Acceptance Criteria:**
-- [ ] `SessionMessage` dataclass: role, content, trace_id
-- [ ] `Session` dataclass: session_id, messages, created_at
-- [ ] `SessionManager` class with: `create_session()`, `add_message()`, `get_context_messages()`
-- [ ] `create_session()` generates unique session ID
-- [ ] `add_message()` appends message to session history
-- [ ] `get_context_messages()` returns recent messages formatted for LLM (respects max_messages limit)
-- [ ] Sessions stored in memory (no persistence needed for PoC)
-- [ ] Unit tests for all methods
-- [ ] `pyrefly check` passes
+- [x] `SessionMessage` dataclass: role, content, trace_id
+- [x] `Session` dataclass: session_id, messages, created_at
+- [x] `SessionManager` class with: `create_session()`, `add_message()`, `get_context_messages()`
+- [x] `create_session()` generates unique session ID
+- [x] `add_message()` appends message to session history
+- [x] `get_context_messages()` returns recent messages formatted for LLM (respects max_messages limit)
+- [x] Sessions stored in memory (no persistence needed for PoC)
+- [x] Unit tests for all methods (36 tests)
+- [x] `pyrefly check` passes
 
 ---
 
