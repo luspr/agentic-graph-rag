@@ -351,20 +351,24 @@ state: done
 
 ### Task 4.2: Add interactive trace inspector (terminal UI)
 
+state: done
+
 **Description:** Add an interactive trace inspector to the terminal UI that lets users toggle focus to the trace list, navigate events, and open a full-detail view for the selected event.
 
 **Files:**
 - `src/agentic_graph_rag/ui/terminal.py`
 
 **Acceptance Criteria:**
-- [ ] Shift+Tab toggles focus between chat input and trace view
-- [ ] When trace view is focused, Up/Down or `k/j` moves selection through events
-- [ ] Selected trace row is visually highlighted
-- [ ] Enter opens a detail pane for the selected event
-- [ ] Detail pane shows full, untruncated event data: event_type, timestamp, duration, data payload
-- [ ] Full prompt strings, queries, tool arguments, and results are visible in the detail pane
-- [ ] Esc (or Enter) closes the detail pane and returns to the trace list
-- [ ] `/trace` overview remains truncated in the list, full fidelity only in detail view
+- [x] When trace view is focused, Up/Down or `k/j` moves selection through events
+- [x] Selected trace row is visually highlighted
+- [x] Enter opens a detail pane for the selected event
+- [x] Detail pane shows full, untruncated event data: event_type, timestamp, duration, data payload
+- [x] Data, including dicts must be rendered nicely: Easily to read and visually pleasant for a human
+- [x] Full prompt strings, queries, tool arguments, and results are visible in the detail pane
+- [x] Esc closes the detail pane and returns to the trace list, indicate how to close on the bottom of the screen
+- [x] `/trace` overview remains truncated in the list, full fidelity only in detail view
+
+**Note:** The Shift+Tab toggle between chat input and trace view was replaced with a simpler design: `/trace` command opens a standalone interactive trace inspector that can be navigated with j/k arrows and exited with q/Esc. This provides a cleaner UX without complex focus management.
 
 ---
 

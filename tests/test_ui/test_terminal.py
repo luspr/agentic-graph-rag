@@ -1,4 +1,4 @@
-"""Unit tests for TerminalUI and UITracer."""
+"""Unit tests for TerminalUI, UITracer, and TraceInspector."""
 
 from io import StringIO
 from unittest.mock import AsyncMock, MagicMock
@@ -12,7 +12,12 @@ from agentic_graph_rag.graph.base import GraphDatabase, GraphSchema, NodeType
 from agentic_graph_rag.llm.base import LLMClient
 from agentic_graph_rag.prompts.manager import PromptManager
 from agentic_graph_rag.retriever.base import RetrievalStep
-from agentic_graph_rag.ui.terminal import TerminalUI, UITracer
+from agentic_graph_rag.ui.terminal import (
+    TerminalUI,
+    TraceInspector,
+    UITracer,
+    _format_data_pretty,
+)
 
 
 # --- Fixtures ---
@@ -513,3 +518,301 @@ def test_show_help(terminal_ui: TerminalUI) -> None:
     """_show_help prints help message."""
     # Should not raise
     terminal_ui._show_help()
+
+
+# --- TraceInspector tests ---
+
+
+@pytest.fixture
+def sample_trace_data() -> dict:
+    """Create sample trace data for testing."""
+    return {
+        "trace_id": "test-trace-123",
+        "query": "What movies did Tom Hanks act in?",
+        "started_at": "2024-01-01T12:00:00",
+        "completed_at": "2024-01-01T12:00:05",
+        "duration_ms": 5000.0,
+        "events": [
+            {
+                "event_type": "query_start",
+                "timestamp": "2024-01-01T12:00:00",
+                "data": {"query": "What movies did Tom Hanks act in?"},
+                "duration_ms": None,
+            },
+            {
+                "event_type": "iteration_start",
+                "timestamp": "2024-01-01T12:00:01",
+                "data": {"iteration": 1},
+                "duration_ms": None,
+            },
+            {
+                "event_type": "tool_call",
+                "timestamp": "2024-01-01T12:00:02",
+                "data": {
+                    "tool_name": "execute_cypher",
+                    "arguments": {
+                        "query": "MATCH (p:Person {name: 'Tom Hanks'})-[:ACTED_IN]->(m:Movie) "
+                        "RETURN m.title",
+                        "reasoning": "Find movies Tom Hanks acted in",
+                    },
+                },
+                "duration_ms": 150.0,
+            },
+            {
+                "event_type": "tool_result",
+                "timestamp": "2024-01-01T12:00:03",
+                "data": {"success": True, "result": ["Forrest Gump", "Cast Away"]},
+                "duration_ms": None,
+            },
+            {
+                "event_type": "complete",
+                "timestamp": "2024-01-01T12:00:05",
+                "data": {"status": "completed"},
+                "duration_ms": None,
+            },
+        ],
+        "result": {
+            "answer": "Tom Hanks acted in Forrest Gump and Cast Away.",
+            "status": "completed",
+            "iterations": 1,
+            "confidence": 0.95,
+        },
+    }
+
+
+def test_trace_inspector_init(console: Console, sample_trace_data: dict) -> None:
+    """TraceInspector initializes with correct defaults."""
+    inspector = TraceInspector(console, sample_trace_data)
+
+    assert inspector._trace_data == sample_trace_data
+    assert len(inspector._events) == 5
+    assert inspector._selected_index == 0
+    assert not inspector._detail_view
+    assert inspector._running
+
+
+def test_trace_inspector_empty_events(console: Console) -> None:
+    """TraceInspector handles empty events gracefully."""
+    trace_data = {"trace_id": "test", "query": "test", "events": []}
+    inspector = TraceInspector(console, trace_data)
+
+    # Should not raise
+    inspector.run()
+
+
+def test_trace_inspector_non_interactive_mode(
+    console: Console, sample_trace_data: dict
+) -> None:
+    """TraceInspector renders once in non-interactive mode."""
+    inspector = TraceInspector(console, sample_trace_data, interactive=False)
+
+    # Should render and return immediately
+    inspector.run()
+
+
+def test_trace_inspector_move_selection(
+    console: Console, sample_trace_data: dict
+) -> None:
+    """TraceInspector selection navigation works correctly."""
+    inspector = TraceInspector(console, sample_trace_data, interactive=False)
+
+    assert inspector._selected_index == 0
+
+    # Move down
+    inspector._move_selection(1)
+    assert inspector._selected_index == 1
+
+    inspector._move_selection(1)
+    assert inspector._selected_index == 2
+
+    # Move up
+    inspector._move_selection(-1)
+    assert inspector._selected_index == 1
+
+    # Can't go below 0
+    inspector._move_selection(-10)
+    assert inspector._selected_index == 0
+
+    # Can't go above max
+    inspector._move_selection(100)
+    assert inspector._selected_index == 4  # 5 events, max index is 4
+
+
+def test_trace_inspector_toggle_detail_view(
+    console: Console, sample_trace_data: dict
+) -> None:
+    """TraceInspector toggles between list and detail view."""
+    inspector = TraceInspector(console, sample_trace_data, interactive=False)
+
+    assert not inspector._detail_view
+
+    inspector._toggle_detail_view()
+    assert inspector._detail_view
+
+    inspector._toggle_detail_view()
+    assert not inspector._detail_view
+
+
+def test_trace_inspector_format_event_summary_query_start(
+    console: Console, sample_trace_data: dict
+) -> None:
+    """TraceInspector formats query_start event summary."""
+    inspector = TraceInspector(console, sample_trace_data)
+    event = sample_trace_data["events"][0]
+
+    summary = inspector._format_event_summary(event)
+    assert "What movies did Tom Hanks act in?" in summary
+
+
+def test_trace_inspector_format_event_summary_tool_call(
+    console: Console, sample_trace_data: dict
+) -> None:
+    """TraceInspector formats tool_call event summary."""
+    inspector = TraceInspector(console, sample_trace_data)
+    event = sample_trace_data["events"][2]
+
+    summary = inspector._format_event_summary(event)
+    assert "execute_cypher" in summary
+    assert "MATCH" in summary
+
+
+def test_trace_inspector_format_event_summary_complete(
+    console: Console, sample_trace_data: dict
+) -> None:
+    """TraceInspector formats complete event summary."""
+    inspector = TraceInspector(console, sample_trace_data)
+    event = sample_trace_data["events"][4]
+
+    summary = inspector._format_event_summary(event)
+    assert "completed" in summary
+
+
+def test_trace_inspector_render_list_view(
+    console: Console, sample_trace_data: dict
+) -> None:
+    """TraceInspector renders list view without error."""
+    inspector = TraceInspector(console, sample_trace_data, interactive=False)
+    inspector._detail_view = False
+
+    # Should not raise
+    inspector._render_list_view()
+
+
+def test_trace_inspector_render_detail_view(
+    console: Console, sample_trace_data: dict
+) -> None:
+    """TraceInspector renders detail view without error."""
+    inspector = TraceInspector(console, sample_trace_data, interactive=False)
+    inspector._detail_view = True
+    inspector._selected_index = 2  # Select tool_call event
+
+    # Should not raise
+    inspector._render_detail_view()
+
+
+# --- _format_data_pretty tests ---
+
+
+def test_format_data_pretty_string() -> None:
+    """_format_data_pretty formats simple strings."""
+    result = _format_data_pretty("hello")
+    assert '"hello"' in result.plain
+
+
+def test_format_data_pretty_long_string() -> None:
+    """_format_data_pretty formats long strings."""
+    long_str = "a" * 100
+    result = _format_data_pretty(long_str)
+    assert long_str in result.plain
+
+
+def test_format_data_pretty_multiline_string() -> None:
+    """_format_data_pretty formats multi-line strings."""
+    result = _format_data_pretty("line1\nline2\nline3")
+    assert "line1" in result.plain
+    assert "line2" in result.plain
+
+
+def test_format_data_pretty_integer() -> None:
+    """_format_data_pretty formats integers."""
+    result = _format_data_pretty(42)
+    assert "42" in result.plain
+
+
+def test_format_data_pretty_float() -> None:
+    """_format_data_pretty formats floats."""
+    result = _format_data_pretty(3.14)
+    assert "3.14" in result.plain
+
+
+def test_format_data_pretty_bool_true() -> None:
+    """_format_data_pretty formats boolean True."""
+    result = _format_data_pretty(True)
+    assert "true" in result.plain
+
+
+def test_format_data_pretty_bool_false() -> None:
+    """_format_data_pretty formats boolean False."""
+    result = _format_data_pretty(False)
+    assert "false" in result.plain
+
+
+def test_format_data_pretty_none() -> None:
+    """_format_data_pretty formats None."""
+    result = _format_data_pretty(None)
+    assert "null" in result.plain
+
+
+def test_format_data_pretty_empty_dict() -> None:
+    """_format_data_pretty formats empty dict."""
+    result = _format_data_pretty({})
+    assert "{}" in result.plain
+
+
+def test_format_data_pretty_simple_dict() -> None:
+    """_format_data_pretty formats simple dict."""
+    result = _format_data_pretty({"key": "value"})
+    assert '"key"' in result.plain
+    assert '"value"' in result.plain
+
+
+def test_format_data_pretty_nested_dict() -> None:
+    """_format_data_pretty formats nested dict."""
+    result = _format_data_pretty({"outer": {"inner": "value"}})
+    assert '"outer"' in result.plain
+    assert '"inner"' in result.plain
+    assert '"value"' in result.plain
+
+
+def test_format_data_pretty_empty_list() -> None:
+    """_format_data_pretty formats empty list."""
+    result = _format_data_pretty([])
+    assert "[]" in result.plain
+
+
+def test_format_data_pretty_simple_list() -> None:
+    """_format_data_pretty formats simple list."""
+    result = _format_data_pretty([1, 2, 3])
+    assert "1" in result.plain
+    assert "2" in result.plain
+    assert "3" in result.plain
+
+
+def test_format_data_pretty_complex_structure() -> None:
+    """_format_data_pretty formats complex nested structures."""
+    data = {
+        "name": "test",
+        "values": [1, 2, 3],
+        "nested": {"a": True, "b": None},
+    }
+    result = _format_data_pretty(data)
+    plain = result.plain
+
+    assert '"name"' in plain
+    assert '"test"' in plain
+    assert '"values"' in plain
+    assert "1" in plain
+    assert '"nested"' in plain
+    assert '"a"' in plain
+    assert "true" in plain
+    assert "null" in plain
