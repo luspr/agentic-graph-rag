@@ -114,8 +114,14 @@ class AgentController:
         self._state.iteration += 1
         self._log_event("iteration_start", {"iteration": self._state.iteration})
 
-        # Send to LLM
-        self._log_event("llm_request", {"messages_count": len(self._messages)})
+        # Send to LLM - include full messages for tracing
+        self._log_event(
+            "llm_request",
+            {
+                "messages_count": len(self._messages),
+                "messages": self._messages,
+            },
+        )
 
         try:
             response = await self._llm_client.complete(

@@ -301,6 +301,8 @@ state: done
 
 ### Task 3.6: Persist traces to JSONL with full prompt capture
 
+state: done
+
 **Description:** Persist agent traces to an append-only JSON Lines log (one file per run) and include full prompts/messages for each LLM request (including the system prompt).
 
 **Files:**
@@ -310,14 +312,14 @@ state: done
 - `src/agentic_graph_rag/ui/terminal.py`
 
 **Acceptance Criteria:**
-- [ ] Trace logging writes one JSON line per event to a run-scoped JSONL file (append-only)
-- [ ] Each event line includes: `run_id`, `trace_id`, `event_type`, `timestamp`, `data`, and optional `duration_ms`
-- [ ] LLM request events include the full message list sent to the LLM (system + user + tool messages)
-- [ ] System prompt is included verbatim in the logged messages
-- [ ] Trace file path is configurable via env/config (e.g., output dir + timestamped filename)
-- [ ] Logging can be enabled/disabled via config (default: enabled for terminal UI)
-- [ ] No in-memory trace data loss if file write fails (graceful fallback)
-- [ ] Unit tests cover JSONL serialization and prompt/message capture
+- [x] Trace logging writes one JSON line per event to a run-scoped JSONL file (append-only)
+- [x] Each event line includes: `run_id`, `trace_id`, `event_type`, `timestamp`, `data`, and optional `duration_ms`
+- [x] LLM request events include the full message list sent to the LLM (system + user + tool messages)
+- [x] System prompt is included verbatim in the logged messages
+- [x] Trace file path is configurable via env/config (e.g., output dir + timestamped filename)
+- [x] Logging can be enabled/disabled via config (default: enabled for terminal UI)
+- [x] No in-memory trace data loss if file write fails (graceful fallback)
+- [x] Unit tests cover JSONL serialization and prompt/message capture
 
 ---
 
@@ -363,6 +365,26 @@ state: done
 - [ ] Full prompt strings, queries, tool arguments, and results are visible in the detail pane
 - [ ] Esc (or Enter) closes the detail pane and returns to the trace list
 - [ ] `/trace` overview remains truncated in the list, full fidelity only in detail view
+
+---
+
+### Task 4.3: Support multi-turn chat context in the agent
+
+**Description:** Persist and inject recent user/assistant messages into the LLM context so follow-up queries are handled as a conversation rather than standalone requests.
+
+**Files:**
+- `src/agentic_graph_rag/agent/session.py`
+- `src/agentic_graph_rag/agent/controller.py`
+- `src/agentic_graph_rag/ui/terminal.py`
+- `src/agentic_graph_rag/config.py`
+
+**Acceptance Criteria:**
+- [ ] Recent session messages (user + assistant) are included in LLM requests
+- [ ] System prompt remains the first message; chat history is appended before the retrieval prompt
+- [ ] Configurable max history length (count or token-based)
+- [ ] Ability to clear conversation context with `/clear`
+- [ ] No regression for single-turn behavior if history length is set to 0
+- [ ] Unit tests verify multi-turn context inclusion and ordering
 
 ---
 
