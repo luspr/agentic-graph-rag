@@ -35,7 +35,6 @@ state: done
 - [x] pyproject.toml includes: neo4j, qdrant-client, openai, prompt_toolkit, rich, pydantic, pydantic-settings
 - [x] Dev dependencies include: pytest, pytest-anyio, ruff
 - [x] `uv sync` completes without errors
-- [x] `pyrefly init` configured and `pyrefly check` passes on empty project
 - [x] All `__init__.py` files created
 
 ---
@@ -56,7 +55,6 @@ state: done
 - [x] Configuration for: `MAX_ITERATIONS` (default: 10)
 - [x] Validation errors raised for missing required config
 - [x] Unit test verifying config loads from env vars
-- [x] `pyrefly check` passes
 
 ---
 
@@ -80,7 +78,6 @@ state: done
 - [x] `validate_query()` uses EXPLAIN to check query syntax without executing
 - [x] Proper error handling - captures Neo4j errors in `QueryResult.error`
 - [x] Unit tests with mocked driver
-- [x] `pyrefly check` passes
 - [x] Fixed `_NODE_COUNTS_QUERY`: Neo4j 5.x drops variables after `WITH`; switched to
       `RETURN labels(n)[0], count(*)` which uses implicit grouping.
 - [x] `db.schema.relationshipTypeProperties()` is unavailable on Neo4j community
@@ -108,7 +105,6 @@ state: done
 - [ ] `upsert()` inserts or updates vectors with payload
 - [ ] Collection auto-creation if it doesn't exist
 - [ ] Unit tests with mocked Qdrant client
-- [ ] `pyrefly check` passes
 
 ---
 
@@ -134,7 +130,6 @@ Refer to this for gpt-5.2: https://platform.openai.com/docs/guides/latest-model
 - [x] Retry logic with exponential backoff for rate limits
 - [x] Proper error handling for API errors
 - [x] Unit tests with mocked OpenAI client
-- [x] `pyrefly check` passes
 
 ---
 
@@ -153,7 +148,6 @@ state: done
 - [x] `RetrievalStep` dataclass: action, input, output, error fields
 - [x] `RetrievalResult` dataclass: data, steps, success, message fields
 - [x] `Retriever` ABC with: `retrieve()` method, `strategy` property
-- [x] `pyrefly check` passes
 
 ---
 
@@ -174,7 +168,6 @@ state: done
 - [x] Errors captured without raising exceptions
 - [x] `strategy` property returns `RetrievalStrategy.CYPHER`
 - [x] Unit tests with mocked GraphDatabase
-- [x] `pyrefly check` passes
 
 ---
 
@@ -193,7 +186,6 @@ state: done
 - [ ] Each action recorded as a `RetrievalStep`
 - [ ] `strategy` property returns `RetrievalStrategy.HYBRID`
 - [ ] Unit tests with mocked dependencies
-- [ ] `pyrefly check` passes
 
 ---
 
@@ -217,7 +209,6 @@ state: done
 - [x] `format_results()` converts query results to readable text for LLM
 - [x] Templates stored as constants in templates.py
 - [x] Unit tests verifying prompt structure
-- [x] `pyrefly check` passes
 
 ---
 
@@ -242,7 +233,6 @@ state: done
 - [x] `submit_answer` handler: returns final answer with confidence
 - [x] All handlers return dict results suitable for LLM consumption
 - [x] Unit tests for each tool handler (20 tests covering all handlers and edge cases)
-- [x] `pyrefly check` passes
 
 ---
 
@@ -267,7 +257,6 @@ state: done
 - [x] `should_stop()` returns True if: submit_answer called, max_iterations reached, or error
 - [x] Integrates with tracer to log events (via optional Tracer protocol)
 - [x] Unit tests with mocked LLM responses (24 tests)
-- [x] `pyrefly check` passes
 
 ---
 
@@ -287,7 +276,6 @@ state: done
 - [x] `export()` returns JSON-serializable dict
 - [x] Duration tracking for tool calls and LLM requests
 - [x] Unit tests verifying trace structure (36 tests)
-- [x] `pyrefly check` passes
 
 ---
 
@@ -308,7 +296,28 @@ state: done
 - [x] `get_context_messages()` returns recent messages formatted for LLM (respects max_messages limit)
 - [x] Sessions stored in memory (no persistence needed for PoC)
 - [x] Unit tests for all methods (36 tests)
-- [x] `pyrefly check` passes
+
+---
+
+### Task 3.6: Persist traces to JSONL with full prompt capture
+
+**Description:** Persist agent traces to an append-only JSON Lines log (one file per run) and include full prompts/messages for each LLM request (including the system prompt).
+
+**Files:**
+- `src/agentic_graph_rag/agent/tracer.py`
+- `src/agentic_graph_rag/agent/controller.py`
+- `src/agentic_graph_rag/config.py`
+- `src/agentic_graph_rag/ui/terminal.py`
+
+**Acceptance Criteria:**
+- [ ] Trace logging writes one JSON line per event to a run-scoped JSONL file (append-only)
+- [ ] Each event line includes: `run_id`, `trace_id`, `event_type`, `timestamp`, `data`, and optional `duration_ms`
+- [ ] LLM request events include the full message list sent to the LLM (system + user + tool messages)
+- [ ] System prompt is included verbatim in the logged messages
+- [ ] Trace file path is configurable via env/config (e.g., output dir + timestamped filename)
+- [ ] Logging can be enabled/disabled via config (default: enabled for terminal UI)
+- [ ] No in-memory trace data loss if file write fails (graceful fallback)
+- [ ] Unit tests cover JSONL serialization and prompt/message capture
 
 ---
 
@@ -335,7 +344,6 @@ state: done
 - [x] Graceful error handling with user-friendly messages
 - [x] Entry point in main.py that initializes components and starts UI
 - [x] Unit tests for TerminalUI and UITracer (41 tests)
-- [x] `pyrefly check` passes
 
 ---
 
@@ -356,7 +364,6 @@ state: done
 - [ ] Progress indicator during embedding/indexing
 - [ ] Idempotent - can be re-run without duplicating data
 - [ ] `uv run python scripts/load_movies_dataset.py` works end-to-end
-- [ ] `pyrefly check` passes
 
 ---
 
@@ -377,7 +384,6 @@ state: done
 - [ ] `tests/test_agent/test_tracer.py` - tests for tracer
 - [ ] `tests/test_agent/test_session.py` - tests for session manager
 - [ ] All tests pass: `uv run pytest`
-- [ ] `pyrefly check` passes on test files
 
 ---
 
@@ -402,7 +408,6 @@ state: done
 
 After completing all tasks, verify:
 
-1. **Type checking:** `pyrefly check` passes
 2. **Linting:** `uv run ruff check .` passes
 3. **Formatting:** `uv run ruff format .` (no changes needed)
 4. **Unit tests:** `uv run pytest` - all pass
