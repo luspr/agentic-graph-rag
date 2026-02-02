@@ -347,6 +347,25 @@ state: done
 
 ---
 
+### Task 4.2: Add interactive trace inspector (terminal UI)
+
+**Description:** Add an interactive trace inspector to the terminal UI that lets users toggle focus to the trace list, navigate events, and open a full-detail view for the selected event.
+
+**Files:**
+- `src/agentic_graph_rag/ui/terminal.py`
+
+**Acceptance Criteria:**
+- [ ] Shift+Tab toggles focus between chat input and trace view
+- [ ] When trace view is focused, Up/Down or `k/j` moves selection through events
+- [ ] Selected trace row is visually highlighted
+- [ ] Enter opens a detail pane for the selected event
+- [ ] Detail pane shows full, untruncated event data: event_type, timestamp, duration, data payload
+- [ ] Full prompt strings, queries, tool arguments, and results are visible in the detail pane
+- [ ] Esc (or Enter) closes the detail pane and returns to the trace list
+- [ ] `/trace` overview remains truncated in the list, full fidelity only in detail view
+
+---
+
 ## Phase 5: Data & Testing
 
 ### Task 5.1: Create movies dataset loader script
