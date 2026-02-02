@@ -47,7 +47,8 @@ class Neo4jClient(GraphDatabase):
             self._settings.neo4j_uri,
             auth=(self._settings.neo4j_user, self._settings.neo4j_password),
             notifications_disabled_classifications=[
-                NotificationDisabledClassification.DEPRECATION
+                NotificationDisabledClassification.DEPRECATION,
+                NotificationDisabledClassification.GENERIC,
             ],
         )
         return self
