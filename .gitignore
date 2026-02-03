@@ -4,6 +4,7 @@ AGENTS.md
 # Data dumps
 *.dump
 neo4j-dumps/
+data/
 
 # Trace logs
 logs/
@@ -224,3 +225,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+
+artifacts/

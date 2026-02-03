@@ -15,7 +15,7 @@ class RetrievalStrategy(Enum):
 class RetrievalStep:
     """A single step in the retrieval process."""
 
-    action: str  # e.g., "cypher_query", "vector_search", "graph_expand"
+    action: str  # e.g., "cypher_query", "expand_node"
     input: dict[str, Any]
     output: dict[str, Any]
     error: str | None = None

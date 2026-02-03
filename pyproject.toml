@@ -12,6 +12,7 @@ dependencies = [
     "rich>=13.0",
     "pydantic>=2.0",
     "pydantic-settings>=2.0",
+    "datasets>=4.5.0",
 ]
 
 [dependency-groups]
@@ -45,3 +46,7 @@ project-includes = [
     "**/*.py*",
     "**/*.ipynb",
 ]
+
+[tool.coverage.run]
+source = ["src/agentic_graph_rag"]
+omit = ["src/agentic_graph_rag/scripts/*"]

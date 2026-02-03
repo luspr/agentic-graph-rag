@@ -1,7 +1,7 @@
 services:
   neo4j:
     image: neo4j:5.26.20-community
-    container_name: neo4j-recommendations
+    container_name: neo4j-graph-rag
     environment:
       - NEO4J_AUTH=neo4j/secretpassword
 
@@ -11,6 +11,7 @@ services:
       # APOC procedure access (common pattern for dev; tighten later)
       - NEO4J_dbms_security_procedures_unrestricted=apoc.*
       - NEO4J_dbms_security_procedures_allowlist=apoc.*
+      - NEO4J_dbms_memory_transaction_total_max=2g
 
     ports:
       - "7474:7474"
@@ -33,6 +34,7 @@ services:
       retries: 3
 
   qdrant:
+    container_name: qdrant-graph-rag
     image: qdrant/qdrant:v1.16
     restart: always
     ports:

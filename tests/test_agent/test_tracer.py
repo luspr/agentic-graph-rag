@@ -643,7 +643,7 @@ def test_jsonl_handles_complex_data(tmp_path: Path) -> None:
             {"role": "system", "content": "You are a helpful assistant"},
             {"role": "user", "content": "What is Neo4j?"},
         ],
-        "tools": ["execute_cypher", "vector_search"],
+        "tools": ["execute_cypher", "expand_node"],
         "config": {"temperature": 0.7, "max_tokens": 1000},
     }
     tracer.log_event("llm_request", complex_data)

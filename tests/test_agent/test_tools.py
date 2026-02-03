@@ -39,9 +39,9 @@ def _error_result() -> RetrievalResult:
 # --- AGENT_TOOLS definition tests ---
 
 
-def test_agent_tools_has_four_definitions() -> None:
-    """AGENT_TOOLS contains exactly 4 tool definitions."""
-    assert len(AGENT_TOOLS) == 4
+def test_agent_tools_has_three_definitions() -> None:
+    """AGENT_TOOLS contains exactly 3 tool definitions."""
+    assert len(AGENT_TOOLS) == 3
 
 
 def test_agent_tools_names() -> None:
@@ -49,7 +49,6 @@ def test_agent_tools_names() -> None:
     names = {tool.name for tool in AGENT_TOOLS}
     assert names == {
         "execute_cypher",
-        "vector_search",
         "expand_node",
         "submit_answer",
     }
@@ -61,15 +60,6 @@ def test_execute_cypher_requires_query_and_reasoning() -> None:
     assert tool.parameters["required"] == ["query", "reasoning"]
     assert "query" in tool.parameters["properties"]
     assert "reasoning" in tool.parameters["properties"]
-
-
-def test_vector_search_requires_search_text() -> None:
-    """vector_search tool requires 'search_text' and has optional 'limit'."""
-    tool = next(t for t in AGENT_TOOLS if t.name == "vector_search")
-    assert tool.parameters["required"] == ["search_text"]
-    assert "search_text" in tool.parameters["properties"]
-    assert "limit" in tool.parameters["properties"]
-    assert tool.parameters["properties"]["limit"]["default"] == 10
 
 
 def test_expand_node_requires_node_id() -> None:
@@ -210,90 +200,6 @@ async def test_execute_cypher_returns_error_from_retriever(
     assert result["success"] is False
     assert result["data"] == []
     assert "failed" in result["message"].lower()
-
-
-# --- vector_search handler tests ---
-
-
-@pytest.mark.anyio
-async def test_vector_search_calls_hybrid_retriever(
-    router: ToolRouter,
-    mock_hybrid_retriever: MagicMock,
-) -> None:
-    """vector_search handler passes search_text and context to HybridRetriever."""
-    mock_hybrid_retriever.retrieve.return_value = _success_result()
-    tool_call = ToolCall(
-        id="2",
-        name="vector_search",
-        arguments={"search_text": "action movies", "limit": 5},
-    )
-
-    await router.route(tool_call)
-
-    mock_hybrid_retriever.retrieve.assert_awaited_once_with(
-        "action movies",
-        {
-            "action": "vector_search",
-            "search_text": "action movies",
-            "limit": 5,
-        },
-    )
-
-
-@pytest.mark.anyio
-async def test_vector_search_default_limit(
-    router: ToolRouter,
-    mock_hybrid_retriever: MagicMock,
-) -> None:
-    """vector_search handler defaults limit to 10 when not provided."""
-    mock_hybrid_retriever.retrieve.return_value = _success_result()
-    tool_call = ToolCall(
-        id="2",
-        name="vector_search",
-        arguments={"search_text": "sci-fi"},
-    )
-
-    await router.route(tool_call)
-
-    _, context = mock_hybrid_retriever.retrieve.await_args[0]
-    assert context["limit"] == 10
-
-
-@pytest.mark.anyio
-async def test_vector_search_returns_success(
-    router: ToolRouter,
-    mock_hybrid_retriever: MagicMock,
-) -> None:
-    """vector_search handler returns success result with data."""
-    expected_data = [{"id": "node1", "label": "Movie", "title": "The Matrix"}]
-    mock_hybrid_retriever.retrieve.return_value = _success_result(expected_data)
-    tool_call = ToolCall(
-        id="2",
-        name="vector_search",
-        arguments={"search_text": "matrix"},
-    )
-
-    result = await router.route(tool_call)
-
-    assert result["success"] is True
-    assert result["data"] == expected_data
-
-
-@pytest.mark.anyio
-async def test_vector_search_unavailable_without_hybrid_retriever(
-    router_cypher_only: ToolRouter,
-) -> None:
-    """vector_search returns error when hybrid retriever is not configured."""
-    tool_call = ToolCall(
-        id="2",
-        name="vector_search",
-        arguments={"search_text": "test"},
-    )
-
-    result = await router_cypher_only.route(tool_call)
-
-    assert result["success"] is False
-    assert "not available" in result["error"]
 
 
 # --- expand_node handler tests ---
