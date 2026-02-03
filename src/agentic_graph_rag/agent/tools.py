@@ -30,28 +30,6 @@ AGENT_TOOLS: list[ToolDefinition] = [
         },
     ),
     ToolDefinition(
-        name="vector_search",
-        description=(
-            "Search for nodes semantically similar to the given text. Returned IDs "
-            "are Neo4j elementId values."
-        ),
-        parameters={
-            "type": "object",
-            "properties": {
-                "search_text": {
-                    "type": "string",
-                    "description": "Text to find similar nodes for",
-                },
-                "limit": {
-                    "type": "integer",
-                    "description": "Maximum number of results",
-                    "default": 10,
-                },
-            },
-            "required": ["search_text"],
-        },
-    ),
-    ToolDefinition(
         name="expand_node",
         description=(
             "Expand from a node to find connected nodes and relationships using the "
@@ -119,13 +97,12 @@ class ToolRouter:
 
         Args:
             cypher_retriever: Retriever for executing Cypher queries.
-            hybrid_retriever: Optional retriever for vector search and graph expansion.
+            hybrid_retriever: Optional retriever for graph expansion.
         """
         self._cypher_retriever = cypher_retriever
         self._hybrid_retriever = hybrid_retriever
         self._handlers: dict[str, _Handler] = {
             "execute_cypher": self._handle_execute_cypher,
-            "vector_search": self._handle_vector_search,
             "expand_node": self._handle_expand_node,
             "submit_answer": self._handle_submit_answer,
         }
@@ -148,26 +125,6 @@ class ToolRouter:
         """Validate and execute a Cypher query via the CypherRetriever."""
         query: str = args["query"]
         result = await self._cypher_retriever.retrieve(query)
-        return {
-            "success": result.success,
-            "data": result.data,
-            "message": result.message,
-        }
-
-    async def _handle_vector_search(self, args: dict[str, Any]) -> dict[str, Any]:
-        """Search for semantically similar nodes via the HybridRetriever."""
-        if self._hybrid_retriever is None:
-            return {
-                "error": "Vector search is not available. Hybrid retriever not configured.",
-                "success": False,
-            }
-        search_text: str = args["search_text"]
-        context: dict[str, Any] = {
-            "action": "vector_search",
-            "search_text": search_text,
-            "limit": args.get("limit", 10),
-        }
-        result = await self._hybrid_retriever.retrieve(search_text, context)
         return {
             "success": result.success,
             "data": result.data,

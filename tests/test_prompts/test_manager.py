@@ -106,7 +106,6 @@ def test_build_system_prompt_includes_tools(
     prompt = prompt_manager.build_system_prompt(sample_schema)
 
     assert "execute_cypher" in prompt
-    assert "vector_search" in prompt
     assert "expand_node" in prompt
     assert "submit_answer" in prompt
 
