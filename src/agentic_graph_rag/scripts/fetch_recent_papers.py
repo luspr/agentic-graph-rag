@@ -24,6 +24,7 @@ DEFAULT_QUERIES = ("knowledge graph", "graph rag")
 DEFAULT_LIMIT = 50
 DEFAULT_TIMEOUT = 30.0
 DEFAULT_OUTPUT_DIR = Path("data/paper_search")
+DEFAULT_PDF_DIRNAME = "pdfs"
 SOURCE_NAME = "arxiv"
 USER_AGENT = "agentic-graph-rag/0.1"
 
@@ -119,6 +120,22 @@ def _parse_args() -> argparse.Namespace:
         type=float,
         default=DEFAULT_TIMEOUT,
         help="HTTP timeout in seconds.",
+    )
+    parser.add_argument(
+        "--download-pdfs",
+        action="store_true",
+        help="Download PDFs for papers that include a PDF link.",
+    )
+    parser.add_argument(
+        "--pdf-dir",
+        type=Path,
+        default=None,
+        help="Directory to store downloaded PDFs (defaults to <out-dir>/pdfs).",
+    )
+    parser.add_argument(
+        "--overwrite-pdfs",
+        action="store_true",
+        help="Re-download PDFs even if they already exist.",
     )
     parser.add_argument(
         "--print-titles",
@@ -270,11 +287,75 @@ def _print_titles(console: Console, result: SearchResult) -> None:
         console.print(f"- {paper.title}")
 
 
+def _extract_arxiv_id(value: str) -> str | None:
+    match = re.search(r"(\d{4}\.\d{4,5})(v\d+)?", value)
+    if match:
+        return match.group(0)
+    legacy_match = re.search(r"([a-z-]+/\d{7})(v\d+)?", value, re.IGNORECASE)
+    if legacy_match:
+        return legacy_match.group(0)
+    return None
+
+
+def _pdf_filename(paper: Paper) -> str:
+    candidates = [paper.pdf_url, paper.url]
+    for candidate in candidates:
+        if not candidate:
+            continue
+        arxiv_id = _extract_arxiv_id(candidate)
+        if arxiv_id:
+            return f"{arxiv_id}.pdf"
+    return f"{_slugify(paper.title)}.pdf"
+
+
+def _download_pdf(url: str, destination: Path, timeout: float, overwrite: bool) -> bool:
+    if destination.exists() and not overwrite:
+        return False
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    request = Request(url, headers={"User-Agent": USER_AGENT})
+    try:
+        with (
+            urlopen(request, timeout=timeout) as response,
+            destination.open(  # noqa: S310
+                "wb"
+            ) as handle,
+        ):
+            handle.write(response.read())
+    except (HTTPError, URLError) as exc:
+        raise RuntimeError(f"Failed to download PDF {url}: {exc}") from exc
+    return True
+
+
+def _download_pdfs(
+    console: Console,
+    result: SearchResult,
+    pdf_dir: Path,
+    timeout: float,
+    overwrite: bool,
+) -> None:
+    downloaded = 0
+    skipped = 0
+    for paper in result.papers:
+        if not paper.pdf_url:
+            skipped += 1
+            continue
+        filename = _pdf_filename(paper)
+        destination = pdf_dir / filename
+        if _download_pdf(paper.pdf_url, destination, timeout, overwrite):
+            downloaded += 1
+        else:
+            skipped += 1
+    console.print(
+        f"PDFs for '{result.query}': downloaded {downloaded}, skipped {skipped}."
+    )
+
+
 def main() -> int:
     """Run the paper fetcher."""
     args = _parse_args()
     console = Console()
     queries = args.queries or list(DEFAULT_QUERIES)
+    pdf_dir = args.pdf_dir or (args.out_dir / DEFAULT_PDF_DIRNAME)
     if args.limit <= 0:
         console.print("[red]Limit must be greater than zero.[/red]")
         return 1
@@ -286,6 +367,14 @@ def main() -> int:
             _print_summary(console, result, path)
             if args.print_titles:
                 _print_titles(console, result)
+            if args.download_pdfs:
+                _download_pdfs(
+                    console,
+                    result,
+                    pdf_dir,
+                    args.timeout,
+                    args.overwrite_pdfs,
+                )
     except Exception as exc:  # noqa: BLE001
         console.print(f"[red]Error:[/red] {exc}")
         return 1
