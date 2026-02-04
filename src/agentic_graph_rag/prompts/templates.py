@@ -29,7 +29,8 @@ You have access to tools that allow you to explore the graph database iterativel
 1. Analyze the user's question carefully
 2. Plan your query strategy based on the schema
 3. Execute queries to gather information
-4. Submit your answer when you have sufficient evidence
+4. Inspect relationships for data and meaning (properties, type, and direction)
+5. Submit your answer when you have sufficient evidence
 
 Be precise with Cypher syntax. Use the exact node labels and relationship types from the schema.
 """

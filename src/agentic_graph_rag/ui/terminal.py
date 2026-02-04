@@ -7,7 +7,7 @@ from typing import Any
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.history import InMemoryHistory
-from rich.console import Console
+from rich.console import Console, Group
 from rich.live import Live
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
@@ -185,6 +185,7 @@ class TraceInspector:
         self._detail_view = False
         self._running = True
         self._interactive = interactive
+        self._pager_requested = False
 
     def run(self) -> None:
         """Run the interactive trace inspector."""
@@ -194,55 +195,40 @@ class TraceInspector:
 
         # Non-interactive mode: just render once
         if not self._interactive:
-            self._render_list_view()
+            self._console.print(self._render_list_view())
             return
 
-        # Check if we can use raw key input
-        can_use_raw = _read_key() is None  # Test if termios works
-        # Actually let's just try - if _read_key returns None, we fall back
+        # Check if we can use raw key input (termios + TTY)
         try:
             import termios  # noqa: F401
 
-            can_use_raw = True
+            can_use_raw = sys.stdin.isatty()
         except ImportError:
             can_use_raw = False
 
         self._running = True
-        while self._running:
-            # Clear screen and render
-            self._console.clear()
-            self._console.print()
-            if self._detail_view:
-                self._render_detail_view()
-            else:
-                self._render_list_view()
-
-            # Show help footer
-            self._console.print()
-            if self._detail_view:
-                self._console.print(
-                    "[dim]  [cyan]q[/cyan]/[cyan]Esc[/cyan] back  "
-                    "[cyan]j[/cyan]/[cyan]↓[/cyan] next  "
-                    "[cyan]k[/cyan]/[cyan]↑[/cyan] prev[/dim]"
-                )
-            else:
-                self._console.print(
-                    "[dim]  [cyan]q[/cyan]/[cyan]Esc[/cyan] exit  "
-                    "[cyan]j[/cyan]/[cyan]↓[/cyan] down  "
-                    "[cyan]k[/cyan]/[cyan]↑[/cyan] up  "
-                    "[cyan]Enter[/cyan]/[cyan]v[/cyan] view  "
-                    "[cyan]1-9[/cyan] jump[/dim]"
-                )
-
-            # Get input
-            if can_use_raw:
-                key = _read_key()
-                if key is None:
-                    self._running = False
-                else:
-                    self._process_key(key)
-            else:
-                # Fallback to input() based interaction
+        if can_use_raw:
+            with Live(
+                self._build_renderable(),
+                console=self._console,
+                screen=False,
+                auto_refresh=False,
+            ) as live:
+                while self._running:
+                    live.update(self._build_renderable(), refresh=True)
+                    key = _read_key()
+                    if key is None:
+                        self._running = False
+                    else:
+                        self._process_key(key)
+                    if self._pager_requested:
+                        live.stop()
+                        self._open_detail_pager()
+                        self._pager_requested = False
+                        live.start()
+        else:
+            while self._running:
+                self._console.print(self._build_renderable())
                 try:
                     self._console.print()
                     self._console.print("[cyan]>[/cyan] ", end="")
@@ -250,6 +236,33 @@ class TraceInspector:
                     self._process_input_fallback(user_input)
                 except (EOFError, KeyboardInterrupt, OSError):
                     self._running = False
+                if self._pager_requested:
+                    self._open_detail_pager()
+                    self._pager_requested = False
+
+    def _build_renderable(self) -> Group:
+        """Build the full renderable for the current view."""
+        if self._detail_view:
+            body = self._render_detail_view()
+        else:
+            body = self._render_list_view()
+        if self._detail_view:
+            footer = Text.from_markup(
+                "[dim]  [cyan]q[/cyan]/[cyan]Esc[/cyan] back  "
+                "[cyan]j[/cyan]/[cyan]↓[/cyan] next  "
+                "[cyan]k[/cyan]/[cyan]↑[/cyan] prev  "
+                "[cyan]p[/cyan] page[/dim]"
+            )
+        else:
+            footer = Text.from_markup(
+                "[dim]  [cyan]q[/cyan]/[cyan]Esc[/cyan] exit  "
+                "[cyan]j[/cyan]/[cyan]↓[/cyan] down  "
+                "[cyan]k[/cyan]/[cyan]↑[/cyan] up  "
+                "[cyan]Enter[/cyan]/[cyan]v[/cyan] view  "
+                "[cyan]p[/cyan] page  "
+                "[cyan]1-9[/cyan] jump[/dim]"
+            )
+        return Group(body, Text(""), footer)
 
     def _process_key(self, key: str) -> None:
         """Process a single keypress."""
@@ -263,7 +276,14 @@ class TraceInspector:
         elif key in ("k", "K", "up"):
             self._move_selection(-1)
         elif key in ("enter", "v", "V"):
-            self._toggle_detail_view()
+            if self._detail_view:
+                self._toggle_detail_view()
+            elif self._detail_overflows():
+                self._request_pager()
+            else:
+                self._toggle_detail_view()
+        elif key in ("p", "P"):
+            self._request_pager()
         elif key in ("b", "B", "left"):
             if self._detail_view:
                 self._detail_view = False
@@ -285,35 +305,41 @@ class TraceInspector:
                 self._running = False
         elif user_input in ("j", "down", "n", "next"):
             self._move_selection(1)
-        elif user_input in ("k", "up", "p", "prev"):
+        elif user_input in ("k", "up", "prev"):
             self._move_selection(-1)
+        elif user_input in ("p", "page"):
+            self._request_pager()
         elif user_input in ("", "enter", "v", "view"):
-            self._toggle_detail_view()
+            if self._detail_view:
+                self._toggle_detail_view()
+            elif self._detail_overflows():
+                self._request_pager()
+            else:
+                self._toggle_detail_view()
         elif user_input.isdigit():
             idx = int(user_input) - 1
             if 0 <= idx < len(self._events):
                 self._selected_index = idx
                 self._detail_view = True
 
-    def _render_list_view(self) -> None:
+    def _render_list_view(self) -> Group:
         """Render the event list view."""
-        # Header
-        self._console.print(
-            Panel(Text("Trace Inspector", style="bold"), border_style="blue")
-        )
-
-        # Trace metadata
-        self._console.print(
-            f"[bold]Trace ID:[/bold] {self._trace_data['trace_id'][:36]}"
-        )
+        parts: list[Any] = [
+            Panel(Text("Trace Inspector", style="bold"), border_style="blue"),
+            Text.from_markup(
+                f"[bold]Trace ID:[/bold] {self._trace_data['trace_id'][:36]}"
+            ),
+        ]
         query = self._trace_data["query"]
         if len(query) > 70:
             query = query[:67] + "..."
-        self._console.print(f"[bold]Query:[/bold] {query}")
+        parts.append(Text.from_markup(f"[bold]Query:[/bold] {query}"))
         if self._trace_data.get("duration_ms"):
             duration_sec = self._trace_data["duration_ms"] / 1000
-            self._console.print(f"[bold]Duration:[/bold] {duration_sec:.2f}s")
-        self._console.print()
+            parts.append(
+                Text.from_markup(f"[bold]Duration:[/bold] {duration_sec:.2f}s")
+            )
+        parts.append(Text(""))
 
         # Events table
         table = Table(show_header=True, header_style="bold", box=None, padding=(0, 1))
@@ -350,50 +376,58 @@ class TraceInspector:
                 Text(duration, style=time_style),
             )
 
-        self._console.print(table)
+        parts.append(table)
 
         # Result summary
         if self._trace_data.get("result"):
             result = self._trace_data["result"]
-            self._console.print()
             confidence_str = (
                 f" | Confidence: {result['confidence']:.0%}"
                 if result.get("confidence")
                 else ""
             )
-            self._console.print(
-                f"[bold]Result:[/bold] {result['status']} | "
-                f"Iterations: {result['iterations']}{confidence_str}"
+            parts.append(Text(""))
+            parts.append(
+                Text.from_markup(
+                    f"[bold]Result:[/bold] {result['status']} | "
+                    f"Iterations: {result['iterations']}{confidence_str}"
+                )
             )
 
-    def _render_detail_view(self) -> None:
+        return Group(*parts)
+
+    def _render_detail_view(self) -> Group:
         """Render the detail view for the selected event."""
         event = self._events[self._selected_index]
 
         # Header
         title = f"Event {self._selected_index + 1}/{len(self._events)}: {event['event_type']}"
-        self._console.print(Panel(Text(title, style="bold"), border_style="cyan"))
+        parts: list[Any] = [Panel(Text(title, style="bold"), border_style="cyan")]
 
         # Event metadata
-        self._console.print(f"[bold]Type:[/bold] [cyan]{event['event_type']}[/cyan]")
-        self._console.print(f"[bold]Timestamp:[/bold] {event['timestamp']}")
+        parts.append(
+            Text.from_markup(f"[bold]Type:[/bold] [cyan]{event['event_type']}[/cyan]")
+        )
+        parts.append(Text.from_markup(f"[bold]Timestamp:[/bold] {event['timestamp']}"))
         if event.get("duration_ms"):
-            self._console.print(f"[bold]Duration:[/bold] {event['duration_ms']:.0f}ms")
-        self._console.print()
+            parts.append(
+                Text.from_markup(f"[bold]Duration:[/bold] {event['duration_ms']:.0f}ms")
+            )
+        parts.append(Text(""))
 
         # Data payload
-        self._console.print("[bold]Data:[/bold]")
+        parts.append(Text.from_markup("[bold]Data:[/bold]"))
         data = event.get("data", {})
         if data:
             formatted = _format_data_pretty(data)
-            self._console.print(Panel(formatted, border_style="dim", padding=(0, 1)))
+            parts.append(Panel(formatted, border_style="dim", padding=(0, 1)))
         else:
-            self._console.print("[dim](no data)[/dim]")
+            parts.append(Text.from_markup("[dim](no data)[/dim]"))
 
         # Special handling for llm_request - show message previews
         if event["event_type"] == "llm_request" and "messages" in data:
-            self._console.print()
-            self._console.print("[bold]Messages Preview:[/bold]")
+            parts.append(Text(""))
+            parts.append(Text.from_markup("[bold]Messages Preview:[/bold]"))
             for i, msg in enumerate(data.get("messages", [])[:5]):
                 role = msg.get("role", "unknown")
                 content = str(msg.get("content", ""))[:80]
@@ -406,7 +440,11 @@ class TraceInspector:
                     "tool": "magenta",
                 }
                 color = role_colors.get(role, "white")
-                self._console.print(f"  [{color}]{i + 1}. {role}:[/{color}] {content}")
+                parts.append(
+                    Text.from_markup(f"  [{color}]{i + 1}. {role}:[/{color}] {content}")
+                )
+
+        return Group(*parts)
 
     def _format_event_summary(self, event: dict[str, Any]) -> str:
         """Format event details as a brief summary for list view."""
@@ -462,6 +500,29 @@ class TraceInspector:
     def _toggle_detail_view(self) -> None:
         """Toggle between list and detail view."""
         self._detail_view = not self._detail_view
+
+    def _detail_overflows(self) -> bool:
+        """Return True if the detail view would exceed the terminal height."""
+        renderable = self._render_detail_view()
+        measure_console = Console(
+            width=self._console.size.width,
+            record=True,
+            force_terminal=True,
+        )
+        measure_console.print(renderable)
+        lines = measure_console.export_text().splitlines()
+        available_lines = max(1, self._console.size.height - 2)
+        return len(lines) > available_lines
+
+    def _request_pager(self) -> None:
+        """Request opening the pager for the selected event."""
+        self._pager_requested = True
+
+    def _open_detail_pager(self) -> None:
+        """Open a pager for the selected event details."""
+        renderable = self._render_detail_view()
+        with self._console.pager(styles=True):
+            self._console.print(renderable)
 
 
 class UITracer(Tracer):

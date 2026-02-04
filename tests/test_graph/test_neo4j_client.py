@@ -209,7 +209,7 @@ async def test_get_schema_returns_graph_schema(settings: Settings) -> None:
             ],
             summary={},
         ),
-        "DISTINCT": QueryResult(
+        "labels(a)[0]": QueryResult(
             records=[
                 {
                     "type": "ACTED_IN",
@@ -260,6 +260,80 @@ async def test_get_schema_returns_graph_schema(settings: Settings) -> None:
     assert rel.start_label == "Person"
     assert rel.end_label == "Movie"
     assert rel.properties == {"role": "String"}
+
+
+@pytest.mark.anyio
+async def test_get_schema_relationship_properties_fallback(
+    settings: Settings,
+) -> None:
+    """get_schema() falls back to data-derived relationship properties."""
+    client = Neo4jClient(settings)
+
+    responses: dict[str, QueryResult] = {
+        "nodeTypeProperties": QueryResult(
+            records=[
+                {
+                    "nodeLabels": ["Entity"],
+                    "propertyName": "name",
+                    "propertyTypes": ["String"],
+                },
+            ],
+            summary={},
+        ),
+        "count(*)": QueryResult(
+            records=[
+                {"label": "Entity", "count": 2},
+            ],
+            summary={},
+        ),
+        "labels(a)[0]": QueryResult(
+            records=[
+                {
+                    "type": "INVESTIGATED",
+                    "start_label": "Entity",
+                    "end_label": "Entity",
+                },
+            ],
+            summary={},
+        ),
+        "relationshipTypeProperties": QueryResult(
+            records=[],
+            summary={},
+        ),
+        "valueType": QueryResult(
+            records=[
+                {
+                    "relationshipType": "INVESTIGATED",
+                    "propertyName": "summary",
+                    "propertyTypes": ["String"],
+                },
+                {
+                    "relationshipType": "INVESTIGATED",
+                    "propertyName": "source_document",
+                    "propertyTypes": ["String"],
+                },
+            ],
+            summary={},
+        ),
+    }
+
+    async def _mock_execute(
+        cypher: str, params: dict[str, Any] | None = None
+    ) -> QueryResult:
+        for key, result in responses.items():
+            if key in cypher:
+                return result
+        return QueryResult(records=[], summary={})
+
+    client.execute = _mock_execute  # type: ignore[assignment]
+
+    schema = await client.get_schema()
+
+    rel = next(r for r in schema.relationship_types if r.type == "INVESTIGATED")
+    assert rel.properties == {
+        "summary": "String",
+        "source_document": "String",
+    }
 
 
 @pytest.mark.anyio

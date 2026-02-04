@@ -32,6 +32,17 @@ _REL_PROPERTIES_QUERY = (
     "YIELD relationshipType, propertyName, propertyTypes"
 )
 
+_REL_PROPERTIES_SAMPLE_LIMIT = 10_000
+
+_REL_PROPERTIES_FALLBACK_QUERY = (
+    "MATCH ()-[r]->() "
+    "WITH r LIMIT $rel_limit "
+    "WITH type(r) AS relationshipType, r "
+    "UNWIND keys(r) AS propertyName "
+    "WITH relationshipType, propertyName, valueType(r[propertyName]) AS propertyType "
+    "RETURN relationshipType, propertyName, collect(DISTINCT propertyType) AS propertyTypes"
+)
+
 
 class Neo4jClient(GraphDatabase):
     """Async Neo4j client with connection pool management."""
@@ -151,12 +162,22 @@ class Neo4jClient(GraphDatabase):
             return []
 
         properties: dict[str, dict[str, str]] = defaultdict(dict)
-        if not props_result.error:
-            for row in props_result.records:
-                prop_types = row.get("propertyTypes", [])
-                properties[row["relationshipType"]][row["propertyName"]] = (
-                    prop_types[0] if prop_types else "Unknown"
-                )
+        props_records: list[dict[str, Any]] = []
+        if not props_result.error and props_result.records:
+            props_records = props_result.records
+        else:
+            fallback_result = await self.execute(
+                _REL_PROPERTIES_FALLBACK_QUERY,
+                {"rel_limit": _REL_PROPERTIES_SAMPLE_LIMIT},
+            )
+            if not fallback_result.error:
+                props_records = fallback_result.records
+
+        for row in props_records:
+            prop_types = row.get("propertyTypes", [])
+            properties[row["relationshipType"]][row["propertyName"]] = (
+                prop_types[0] if prop_types else "Unknown"
+            )
 
         return [
             RelationshipType(

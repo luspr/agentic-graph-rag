@@ -4,7 +4,7 @@ from io import StringIO
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from rich.console import Console
+from rich.console import Console, Group
 
 from agentic_graph_rag.agent.state import AgentConfig, AgentResult, AgentStatus
 from agentic_graph_rag.agent.tools import ToolRouter
@@ -710,6 +710,24 @@ def test_trace_inspector_render_detail_view(
 
     # Should not raise
     inspector._render_detail_view()
+
+
+def test_trace_inspector_build_renderable(
+    console: Console, sample_trace_data: dict
+) -> None:
+    """TraceInspector builds a combined renderable."""
+    inspector = TraceInspector(console, sample_trace_data, interactive=False)
+    renderable = inspector._build_renderable()
+
+    assert isinstance(renderable, Group)
+
+
+def test_trace_inspector_detail_overflows(sample_trace_data: dict) -> None:
+    """TraceInspector detects when detail view exceeds terminal height."""
+    console = Console(file=StringIO(), force_terminal=True, width=40, height=5)
+    inspector = TraceInspector(console, sample_trace_data, interactive=False)
+
+    assert inspector._detail_overflows()
 
 
 # --- _format_data_pretty tests ---
