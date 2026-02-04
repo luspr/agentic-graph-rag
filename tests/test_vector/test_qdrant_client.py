@@ -85,7 +85,9 @@ async def test_search_passes_filter_dict(settings: Settings) -> None:
 
 
 @pytest.mark.anyio
-async def test_search_uses_vector_name_when_collection_named(settings: Settings) -> None:
+async def test_search_uses_vector_name_when_collection_named(
+    settings: Settings,
+) -> None:
     """search() sets using when collection has named vector."""
     mock_client = MagicMock()
     mock_client.get_collection = AsyncMock(return_value=_mock_named_collection_info())
@@ -147,7 +149,9 @@ async def test_upsert_inserts_point(settings: Settings) -> None:
 
 
 @pytest.mark.anyio
-async def test_upsert_uses_named_vector_when_collection_named(settings: Settings) -> None:
+async def test_upsert_uses_named_vector_when_collection_named(
+    settings: Settings,
+) -> None:
     """upsert() wraps vector with name when collection uses named vectors."""
     mock_client = MagicMock()
     mock_client.get_collection = AsyncMock(return_value=_mock_named_collection_info())
