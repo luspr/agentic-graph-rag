@@ -192,9 +192,7 @@ def _build_expand_query(
     )
     where_clause = ""
     if relationship_types:
-        where_clause = (
-            " WHERE ALL(rel IN rels WHERE type(rel) IN $relationship_types)"
-        )
+        where_clause = " WHERE ALL(rel IN rels WHERE type(rel) IN $relationship_types)"
     return (
         f"{match_clause}{where_clause} "
         f"RETURN DISTINCT node, "

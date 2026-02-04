@@ -21,6 +21,7 @@ class QdrantVectorStore(VectorStore):
         collection_name: str,
         vector_size: int,
         distance: models.Distance = models.Distance.COSINE,
+        vector_name: str | None = None,
     ) -> None:
         """Initialize the Qdrant vector store.
 
@@ -29,6 +30,7 @@ class QdrantVectorStore(VectorStore):
             collection_name: Qdrant collection name for vectors.
             vector_size: Dimensionality of embeddings stored in the collection.
             distance: Distance metric for similarity search.
+            vector_name: Optional named vector to use for multi-vector collections.
         """
         self._client = AsyncQdrantClient(
             host=settings.qdrant_host,
@@ -37,6 +39,9 @@ class QdrantVectorStore(VectorStore):
         self._collection_name = collection_name
         self._vector_size = vector_size
         self._distance = distance
+        if vector_name is not None and not vector_name.strip():
+            raise ValueError("Vector name must be a non-empty string.")
+        self._vector_name = vector_name
         self._collection_ready = False
 
     async def search(
@@ -53,6 +58,7 @@ class QdrantVectorStore(VectorStore):
         response = await self._client.query_points(
             collection_name=self._collection_name,
             query=embedding,
+            using=self._vector_name,
             query_filter=query_filter,
             limit=limit,
             with_payload=True,
@@ -80,7 +86,8 @@ class QdrantVectorStore(VectorStore):
         self._validate_embedding(embedding)
         await self._ensure_collection()
 
-        point = models.PointStruct(id=id, vector=embedding, payload=payload)
+        vector_struct = self._build_vector_struct(embedding)
+        point = models.PointStruct(id=id, vector=vector_struct, payload=payload)
         await self._client.upsert(
             collection_name=self._collection_name,
             points=[point],
@@ -96,13 +103,21 @@ class QdrantVectorStore(VectorStore):
             return filter
         return models.Filter.model_validate(filter)
 
+    def _build_vector_struct(self, embedding: list[float]) -> models.VectorStruct:
+        """Build the vector struct for Qdrant APIs."""
+        if self._vector_name is None:
+            return embedding
+        return {self._vector_name: embedding}
+
     async def _ensure_collection(self) -> None:
         """Ensure the Qdrant collection exists before operations."""
         if self._collection_ready:
             return
 
         try:
-            await self._client.get_collection(self._collection_name)
+            info = await self._client.get_collection(self._collection_name)
+            vectors = self._extract_vectors_config(info)
+            self._vector_name = self._resolve_vector_name(vectors, self._vector_name)
             self._collection_ready = True
             return
         except qdrant_exceptions.UnexpectedResponse as exc:
@@ -111,10 +126,7 @@ class QdrantVectorStore(VectorStore):
 
         await self._client.create_collection(
             collection_name=self._collection_name,
-            vectors_config=models.VectorParams(
-                size=self._vector_size,
-                distance=self._distance,
-            ),
+            vectors_config=self._build_vectors_config(),
         )
         self._collection_ready = True
 
@@ -125,3 +137,55 @@ class QdrantVectorStore(VectorStore):
                 "Embedding size does not match collection vector size: "
                 f"{len(embedding)} != {self._vector_size}"
             )
+
+    def _build_vectors_config(
+        self,
+    ) -> models.VectorParams | dict[str, models.VectorParams]:
+        params = models.VectorParams(
+            size=self._vector_size,
+            distance=self._distance,
+        )
+        if self._vector_name is None:
+            return params
+        return {self._vector_name: params}
+
+    def _extract_vectors_config(
+        self,
+        info: models.CollectionInfo,
+    ) -> dict[str, models.VectorParams] | models.VectorParams | None:
+        try:
+            return info.config.params.vectors
+        except AttributeError:
+            return None
+
+    def _resolve_vector_name(
+        self,
+        vectors: dict[str, models.VectorParams] | models.VectorParams | None,
+        requested: str | None,
+    ) -> str | None:
+        if vectors is None:
+            return requested
+        if isinstance(vectors, models.VectorParams):
+            if requested is not None:
+                raise ValueError(
+                    "Qdrant collection uses an unnamed vector. "
+                    "Unset QDRANT_VECTOR_NAME or create a named collection."
+                )
+            return None
+        if isinstance(vectors, dict):
+            if requested is not None:
+                if requested not in vectors:
+                    available = ", ".join(sorted(vectors))
+                    raise ValueError(
+                        "Qdrant collection does not include vector name "
+                        f"'{requested}'. Available names: {available}"
+                    )
+                return requested
+            if len(vectors) == 1:
+                return next(iter(vectors))
+            available = ", ".join(sorted(vectors))
+            raise ValueError(
+                "Qdrant collection defines multiple vector names. "
+                f"Set QDRANT_VECTOR_NAME to one of: {available}"
+            )
+        return requested

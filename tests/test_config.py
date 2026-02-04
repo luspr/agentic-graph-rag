@@ -30,6 +30,7 @@ def test_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
         "QDRANT_HOST",
         "QDRANT_PORT",
         "QDRANT_COLLECTION",
+        "QDRANT_VECTOR_NAME",
         "EMBEDDING_DIM",
         "NODE_UUID_PROPERTY",
         "MAX_ITERATIONS",
@@ -43,6 +44,7 @@ def test_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.qdrant_host == "localhost"
     assert settings.qdrant_port == 6333
     assert settings.qdrant_collection == "graph_nodes"
+    assert settings.qdrant_vector_name is None
     assert settings.embedding_dim == 1536
     assert settings.node_uuid_property == "uuid"
     assert settings.max_iterations == 10
@@ -59,6 +61,7 @@ def test_settings_overrides_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("QDRANT_HOST", "qdrant.example.com")
     monkeypatch.setenv("QDRANT_PORT", "6334")
     monkeypatch.setenv("QDRANT_COLLECTION", "custom_collection")
+    monkeypatch.setenv("QDRANT_VECTOR_NAME", "vector")
     monkeypatch.setenv("EMBEDDING_DIM", "128")
     monkeypatch.setenv("NODE_UUID_PROPERTY", "node_uuid")
     monkeypatch.setenv("MAX_ITERATIONS", "5")
@@ -70,6 +73,7 @@ def test_settings_overrides_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.qdrant_host == "qdrant.example.com"
     assert settings.qdrant_port == 6334
     assert settings.qdrant_collection == "custom_collection"
+    assert settings.qdrant_vector_name == "vector"
     assert settings.embedding_dim == 128
     assert settings.node_uuid_property == "node_uuid"
     assert settings.max_iterations == 5

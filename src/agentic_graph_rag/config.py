@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     # OpenAI
     openai_api_key: str
     openai_model: str = "gpt-5.2"
+    openai_judge_model: str | None = None
 
     # Neo4j
     neo4j_uri: str
@@ -20,6 +21,7 @@ class Settings(BaseSettings):
     qdrant_host: str = "localhost"
     qdrant_port: int = 6333
     qdrant_collection: str = "graph_nodes"
+    qdrant_vector_name: str | None = None
     embedding_dim: int = 1536
     node_uuid_property: str = "uuid"
 

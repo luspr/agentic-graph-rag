@@ -464,3 +464,230 @@ After completing all tasks, verify:
    - Load data: `uv run python scripts/load_movies_dataset.py`
    - Run app: `uv run python -m agentic_graph_rag.main`
    - Test queries work end-to-end
+
+---
+
+## Phase 6: Improvements (Follow-up)
+
+### Task 6.1: Enrich HybridRetriever expand_node output
+
+state: todo
+
+**Description:** Improve the hybrid expand query to preserve more graph structure and context for the LLM.
+
+**Current behavior (reference):**
+- `src/agentic_graph_rag/retriever/hybrid_retriever.py` uses an undirected pattern:
+  - `MATCH (start)-[rels*1..{depth}]-(node)`
+- Returns only node + labels + list of relationship types:
+  - `RETURN DISTINCT node, node.{uuid} AS node_uuid, labels(node) AS node_labels, [rel IN rels | type(rel)] AS relationship_types`
+- This collapses multiple paths into a single node, loses directionality, and does not include path length or edge identity.
+
+Below is a detailed explanation with code references and a comparison to the Cypher retriever.
+
+  Where this is implemented
+
+  - Hybrid retriever expand query: src/agentic_graph_rag/retriever/hybrid_retriever.py
+  - Cypher retriever: src/agentic_graph_rag/retriever/cypher_retriever.py
+  - Tool entrypoint for expand: src/agentic_graph_rag/agent/tools.py
+
+  ———
+
+  Current expand_node behavior (Hybrid retriever)
+
+  In src/agentic_graph_rag/retriever/hybrid_retriever.py, expand_node builds this query (simplified):
+
+  MATCH (start {uuid: $uuid})
+  MATCH (start)-[rels*1..$depth]-(node)
+  WHERE ALL(rel IN rels WHERE type(rel) IN $relationship_types)
+  RETURN DISTINCT node,
+                  node.uuid AS node_uuid,
+
+  Key behaviors:
+
+  1. Undirected traversal
+  2. No explicit path returned
+      - The query doesn’t return the path, only a list of relationship types.
+      - You can’t reconstruct the exact chain of nodes/edges that led to the node.
+  3. No path length returned
+      - The LLM cannot see whether a returned node was 1 hop away or 3 hops away.
+      - That matters for confidence or for deciding whether to expand further.
+  4. No edge IDs or relationship identity
+      - Only relationship types are returned.
+      - If there are multiple relationship types or multiple paths to the same node, the output collapses to DISTINCT
+        node and you lose which specific path was used.
+      - The list of types can be ambiguous when there are multiple paths (only one path’s rels might be represented).
+  5. Start node not returned
+      - The output includes the expanded node and metadata but not the start node or its UUID.
+      - That makes it harder to present the result as a structured graph step in the trace or in the LLM prompt.
+
+  These outputs are what the LLM sees in the prompt because PromptManager.format_results(...) formats the returned list
+  of records. The LLM has no richer structure beyond what the query returns.
+
+
+**Planned improvements:**
+- Return richer structure per **path**, not just per node. Minimum schema:
+  - `start_uuid` (uuid of the start node)
+  - `node_uuid` (uuid of the expanded node)
+  - `node_labels`
+  - `relationship_types` (ordered)
+  - `path_length`
+- Add a **path payload** to preserve structure:
+  - `path_nodes`: ordered list of `{uuid, labels}` (optionally name/title if present)
+  - `path_rels`: ordered list of `{type, direction, rel_id}` or `{type, from_uuid, to_uuid}`
+- Preserve **directionality**:
+  - Use directed traversal (e.g., `-[:TYPE*]->`) or capture direction per rel in output.
+  - If the tool remains undirected, include a `direction` field per relationship to reconstruct.
+- Avoid collapsing multiple paths into a single node:
+  - Prefer returning one record per path (`path`), optionally with a `max_paths` limit.
+  - If deduplication is needed, dedupe on `(node_uuid, path_length, relationship_types)` not just node.
+- Optional controls to add to tool args:
+  - `direction`: `"out" | "in" | "both"` (default `"both"` if not specified)
+  - `max_paths`: cap the number of returned paths (default reasonable, e.g. 20)
+  - `include_properties`: bool to include select node properties in path nodes
+- Suggested Cypher shape (example):
+  - `MATCH p=(start {uuid: $uuid})-[rels*1..$depth]->(node)`
+  - `RETURN p, length(p) AS path_length, ...`
+  - Derive `path_nodes` + `path_rels` from `nodes(p)` and `relationships(p)` for output.
+
+**Files:**
+- `src/agentic_graph_rag/retriever/hybrid_retriever.py`
+- `src/agentic_graph_rag/agent/tools.py` (if output schema changes)
+- `src/agentic_graph_rag/prompts/manager.py` (if result formatting needs updates)
+- `tests/test_retriever/test_hybrid_retriever.py`
+- `tests/test_agent/test_tools.py` (if output schema changes)
+
+**Acceptance Criteria:**
+- [ ] `expand_node` returns one record per path with `start_uuid`, `node_uuid`, and `path_length`.
+- [ ] Directionality is preserved (directed pattern or explicit direction metadata).
+- [ ] Returned data includes ordered `path_nodes` and `path_rels` (or equivalent).
+- [ ] If `max_paths` / `direction` are added, they are wired into tool args and tested.
+- [ ] Unit tests validate path ordering, direction, and length.
+
+### Task 6.2: Add Qdrant ingestion/indexing pipeline
+
+state: todo
+
+**Description:** Implement a dataset-aware ingestion pipeline that generates embeddings and upserts vectors into Qdrant. This is required to make `vector_search` useful beyond external/hand-built indexes.
+
+**Current behavior (reference):**
+- Vector search exists (`HybridRetriever`) but there is no pipeline to populate Qdrant.
+- Only UUID is added during dataset load (`src/agentic_graph_rag/scripts/load_sr_rag_datasets.py`).
+
+**Planned improvements:**
+- Add a script (or scripts) that:
+  - reads nodes from Neo4j (by label and field selection),
+  - builds text for embedding (e.g., `title + tagline` for movies),
+  - generates embeddings via `OpenAILLMClient.embed`,
+  - upserts vectors into Qdrant with payload containing:
+    - `uuid`,
+    - label,
+    - key properties (name/title),
+    - any fields needed for filters.
+- Make the script idempotent (re-runs do not duplicate).
+- Add progress reporting and basic stats (count, rate).
+
+**Files:**
+- `scripts/index_<dataset>.py` (new)
+- `src/agentic_graph_rag/llm/openai_client.py` (reuse for embeddings)
+- `src/agentic_graph_rag/vector/qdrant_client.py`
+- `README.md` (usage documentation)
+
+**Acceptance Criteria:**
+- [ ] Script can embed and upsert nodes for at least one dataset.
+- [ ] Payload includes `uuid` and label in every Qdrant point.
+- [ ] Script is idempotent and reports progress.
+- [ ] Documented run command in README.
+
+### Task 6.3: Improve result formatting for vector search
+
+state: todo
+
+**Description:** The LLM currently receives raw vector hits with payloads; this can be too verbose and inconsistent.
+
+**Current behavior (reference):**
+- `PromptManager.format_results()` is used for all results, including vector hits.
+- Vector payloads can be large and are not summarized.
+
+**Planned improvements:**
+- Add a dedicated formatter for vector search results:
+  - show `uuid`, `score`, and a short payload summary,
+  - truncate payload fields or large lists,
+  - prefer consistent top-k summary lines.
+- Keep output stable for LLM consumption.
+
+**Files:**
+- `src/agentic_graph_rag/prompts/manager.py`
+- `src/agentic_graph_rag/agent/controller.py` (if routing needs metadata)
+- `tests/test_prompts/test_manager.py`
+
+**Acceptance Criteria:**
+- [ ] Vector search results are formatted with a compact, consistent schema.
+- [ ] Large payloads are truncated or summarized.
+- [ ] Unit tests cover vector formatting.
+
+### Task 6.4: Strengthen config validation
+
+state: todo
+
+**Description:** Validate vector config values early to avoid runtime surprises.
+
+**Current behavior (reference):**
+- `Settings` does not validate `EMBEDDING_DIM`, `QDRANT_COLLECTION`, or `NODE_UUID_PROPERTY`.
+- `HybridRetriever` validates UUID property, but too late.
+
+**Planned improvements:**
+- Add Pydantic validators to enforce:
+  - `embedding_dim > 0`,
+  - `qdrant_collection` non-empty,
+  - `node_uuid_property` matches Neo4j token pattern.
+- Fail fast with clear errors.
+
+**Files:**
+- `src/agentic_graph_rag/config.py`
+- `tests/test_config.py`
+
+**Acceptance Criteria:**
+- [ ] Invalid vector config values raise ValidationError with clear messages.
+- [ ] Unit tests cover invalid/valid cases.
+
+### Task 6.5: Verify Qdrant collection compatibility at runtime
+
+state: todo
+
+**Description:** Ensure collection vector size matches configured `embedding_dim` and avoid silent mismatches.
+
+**Current behavior (reference):**
+- `QdrantVectorStore` auto-creates if missing but does not verify size on connect.
+
+**Planned improvements:**
+- On first use, fetch collection info and validate size.
+- If size mismatch, raise a clear error (do not proceed).
+
+**Files:**
+- `src/agentic_graph_rag/vector/qdrant_client.py`
+- `tests/test_vector/test_qdrant_client.py`
+
+**Acceptance Criteria:**
+- [ ] Size mismatches raise a descriptive error.
+- [ ] Unit tests cover both valid and invalid size cases.
+
+### Task 6.6: Stabilize pre-commit hook execution in CI/dev
+
+state: todo
+
+**Description:** Commits can fail when pre-commit cannot write its cache (read-only filesystem).
+
+**Current behavior (reference):**
+- `git commit` failed due to pre-commit cache permissions.
+
+**Planned improvements:**
+- Document or set `PRE_COMMIT_HOME` to a writable location (e.g., `.cache/pre-commit` under repo).
+- Optionally add a troubleshooting note to `README.md`.
+
+**Files:**
+- `README.md` (documentation)
+- Optional: `.env` template or developer docs
+
+**Acceptance Criteria:**
+- [ ] Pre-commit cache location guidance is documented.
+- [ ] Developers can run hooks without cache permission errors.

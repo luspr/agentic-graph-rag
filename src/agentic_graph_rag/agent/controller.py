@@ -11,7 +11,7 @@ from agentic_graph_rag.agent.state import (
 )
 from agentic_graph_rag.agent.tools import AGENT_TOOLS, ToolRouter
 from agentic_graph_rag.graph.base import GraphDatabase
-from agentic_graph_rag.llm.base import LLMClient, ToolCall
+from agentic_graph_rag.llm.base import LLMClient, ToolCall, ToolDefinition
 from agentic_graph_rag.prompts.manager import PromptContext, PromptManager
 from agentic_graph_rag.retriever.base import RetrievalStep
 
@@ -42,6 +42,7 @@ class AgentController:
         prompt_manager: PromptManager,
         config: AgentConfig | None = None,
         tracer: Tracer | None = None,
+        tools: list[ToolDefinition] | None = None,
     ) -> None:
         """Initialize the AgentController.
 
@@ -52,6 +53,7 @@ class AgentController:
             prompt_manager: Manager for building prompts.
             config: Agent configuration. Defaults to AgentConfig().
             tracer: Optional tracer for logging events.
+            tools: Optional list of tool definitions to expose to the LLM.
         """
         self._llm_client = llm_client
         self._graph_db = graph_db
@@ -59,6 +61,7 @@ class AgentController:
         self._prompt_manager = prompt_manager
         self._config = config or AgentConfig()
         self._tracer = tracer
+        self._tools = tools or AGENT_TOOLS
 
         self._state: AgentState | None = None
         self._user_query: str = ""
@@ -135,7 +138,7 @@ class AgentController:
         try:
             response = await self._llm_client.complete(
                 messages=request_messages,
-                tools=AGENT_TOOLS,
+                tools=self._tools,
             )
         except Exception as e:
             self._log_event("error", {"error": str(e), "type": "llm_error"})
@@ -212,6 +215,7 @@ class AgentController:
                 "tool_id": tool_call.id,
                 "tool_name": tool_call.name,
                 "success": result.get("success", False),
+                "result": result,
             },
         )
 

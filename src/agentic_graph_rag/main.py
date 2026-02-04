@@ -63,6 +63,7 @@ async def main() -> int:
             settings=settings,
             collection_name=settings.qdrant_collection,
             vector_size=settings.embedding_dim,
+            vector_name=settings.qdrant_vector_name,
         )
         hybrid_retriever = HybridRetriever(
             graph_db=graph_db,
