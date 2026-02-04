@@ -38,6 +38,16 @@ def _mock_query_response() -> models.QueryResponse:
     )
 
 
+def _mock_named_collection_info() -> MagicMock:
+    info = MagicMock()
+    info.config = MagicMock()
+    info.config.params = MagicMock()
+    info.config.params.vectors = {
+        "vector": models.VectorParams(size=3, distance=models.Distance.COSINE)
+    }
+    return info
+
+
 @pytest.mark.anyio
 async def test_search_returns_results(settings: Settings) -> None:
     """search() returns VectorSearchResult entries."""
@@ -72,6 +82,23 @@ async def test_search_passes_filter_dict(settings: Settings) -> None:
     assert await_args is not None
     _, kwargs = await_args
     assert isinstance(kwargs["query_filter"], models.Filter)
+
+
+@pytest.mark.anyio
+async def test_search_uses_vector_name_when_collection_named(settings: Settings) -> None:
+    """search() sets using when collection has named vector."""
+    mock_client = MagicMock()
+    mock_client.get_collection = AsyncMock(return_value=_mock_named_collection_info())
+    mock_client.query_points = AsyncMock(return_value=_mock_query_response())
+
+    with patch(_PATCH_TARGET, return_value=mock_client):
+        store = QdrantVectorStore(settings, "movies", vector_size=3)
+        await store.search([0.1, 0.2, 0.3], limit=1)
+
+    await_args = mock_client.query_points.await_args
+    assert await_args is not None
+    _, kwargs = await_args
+    assert kwargs["using"] == "vector"
 
 
 @pytest.mark.anyio
@@ -117,6 +144,28 @@ async def test_upsert_inserts_point(settings: Settings) -> None:
     assert kwargs["collection_name"] == "movies"
     assert len(kwargs["points"]) == 1
     assert kwargs["points"][0].id == "node-1"
+
+
+@pytest.mark.anyio
+async def test_upsert_uses_named_vector_when_collection_named(settings: Settings) -> None:
+    """upsert() wraps vector with name when collection uses named vectors."""
+    mock_client = MagicMock()
+    mock_client.get_collection = AsyncMock(return_value=_mock_named_collection_info())
+    mock_client.upsert = AsyncMock()
+
+    with patch(_PATCH_TARGET, return_value=mock_client):
+        store = QdrantVectorStore(settings, "movies", vector_size=3)
+        await store.upsert(
+            id="node-1",
+            embedding=[0.1, 0.2, 0.3],
+            payload={"title": "The Matrix"},
+        )
+
+    await_args = mock_client.upsert.await_args
+    assert await_args is not None
+    _, kwargs = await_args
+    point = kwargs["points"][0]
+    assert point.vector == {"vector": [0.1, 0.2, 0.3]}
 
 
 @pytest.mark.anyio

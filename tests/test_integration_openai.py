@@ -66,6 +66,9 @@ def qdrant_settings(monkeypatch: pytest.MonkeyPatch) -> Settings:
     monkeypatch.setenv("QDRANT_HOST", os.environ.get("QDRANT_HOST", "localhost"))
     monkeypatch.setenv("QDRANT_PORT", os.environ.get("QDRANT_PORT", "6333"))
     monkeypatch.setenv("QDRANT_COLLECTION", collection)
+    vector_name = os.environ.get("QDRANT_VECTOR_NAME")
+    if vector_name:
+        monkeypatch.setenv("QDRANT_VECTOR_NAME", vector_name)
     embedding_dim = os.environ.get("EMBEDDING_DIM")
     if embedding_dim:
         monkeypatch.setenv("EMBEDDING_DIM", embedding_dim)

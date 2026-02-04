@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     qdrant_host: str = "localhost"
     qdrant_port: int = 6333
     qdrant_collection: str = "graph_nodes"
+    qdrant_vector_name: str | None = None
     embedding_dim: int = 1536
     node_uuid_property: str = "uuid"
 
