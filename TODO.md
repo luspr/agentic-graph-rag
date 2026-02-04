@@ -175,19 +175,21 @@ state: done
 
 ### Task 2.3: Implement Hybrid retriever
 
+state: done
+
 **Description:** Create a retriever that combines vector search for entry points with graph traversal for expansion.
 
 **Files:** `src/agentic_graph_rag/retriever/hybrid_retriever.py`
 
 **Acceptance Criteria:**
-- [ ] `HybridRetriever` class implements `Retriever`
-- [ ] Constructor takes `GraphDatabase`, `VectorStore`, `LLMClient` dependencies
-- [ ] `retrieve()` supports two actions: vector_search and expand_node
-- [ ] Vector search: generates embedding, queries Qdrant, returns matching nodes
-- [ ] Expand node: given node ID, fetches connected nodes via Cypher
-- [ ] Each action recorded as a `RetrievalStep`
-- [ ] `strategy` property returns `RetrievalStrategy.HYBRID`
-- [ ] Unit tests with mocked dependencies
+- [x] `HybridRetriever` class implements `Retriever`
+- [x] Constructor takes `GraphDatabase`, `VectorStore`, `LLMClient` dependencies
+- [x] `retrieve()` supports two actions: vector_search and expand_node
+- [x] Vector search: generates embedding, queries Qdrant, returns matching nodes
+- [x] Expand node: given node ID, fetches connected nodes via Cypher
+- [x] Each action recorded as a `RetrievalStep`
+- [x] `strategy` property returns `RetrievalStrategy.HYBRID`
+- [x] Unit tests with mocked dependencies
 
 ---
 

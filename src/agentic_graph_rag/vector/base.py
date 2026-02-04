@@ -18,9 +18,9 @@ class VectorStore(ABC):
     """Abstract interface for vector storage and search.
 
     Contract:
-        Vector IDs must match Neo4j node IDs (use Neo4j elementId as the canonical
-        identifier). This ensures vector search results can be used directly for
-        graph expansion and Cypher lookups.
+        Vector IDs must match the Neo4j node UUID property. This ensures vector
+        search results can be used directly for graph expansion and Cypher
+        lookups without relying on internal Neo4j identifiers.
     """
 
     @abstractmethod
@@ -52,7 +52,7 @@ class VectorStore(ABC):
         """Insert or update a vector.
 
         Args:
-            id: Vector ID matching the Neo4j elementId for the node.
+            id: Vector ID matching the Neo4j node UUID property.
             embedding: Vector embedding to store.
             payload: Metadata payload for the vector.
         """

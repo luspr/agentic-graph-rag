@@ -30,17 +30,45 @@ AGENT_TOOLS: list[ToolDefinition] = [
         },
     ),
     ToolDefinition(
+        name="vector_search",
+        description=(
+            "Search the vector database for semantically similar nodes and return "
+            "matching node UUIDs."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "The natural language query to embed and search with",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of vector results to return",
+                    "default": 5,
+                },
+                "filters": {
+                    "type": "object",
+                    "description": (
+                        "Optional vector store filter (Qdrant filter JSON structure)"
+                    ),
+                },
+            },
+            "required": ["query"],
+        },
+    ),
+    ToolDefinition(
         name="expand_node",
         description=(
             "Expand from a node to find connected nodes and relationships using the "
-            "node's Neo4j elementId."
+            "node's UUID property."
         ),
         parameters={
             "type": "object",
             "properties": {
                 "node_id": {
                     "type": "string",
-                    "description": "The ID of the node to expand from",
+                    "description": "The UUID of the node to expand from",
                 },
                 "relationship_types": {
                     "type": "array",
@@ -97,12 +125,13 @@ class ToolRouter:
 
         Args:
             cypher_retriever: Retriever for executing Cypher queries.
-            hybrid_retriever: Optional retriever for graph expansion.
+            hybrid_retriever: Optional retriever for vector search and graph expansion.
         """
         self._cypher_retriever = cypher_retriever
         self._hybrid_retriever = hybrid_retriever
         self._handlers: dict[str, _Handler] = {
             "execute_cypher": self._handle_execute_cypher,
+            "vector_search": self._handle_vector_search,
             "expand_node": self._handle_expand_node,
             "submit_answer": self._handle_submit_answer,
         }
@@ -125,6 +154,28 @@ class ToolRouter:
         """Validate and execute a Cypher query via the CypherRetriever."""
         query: str = args["query"]
         result = await self._cypher_retriever.retrieve(query)
+        return {
+            "success": result.success,
+            "data": result.data,
+            "message": result.message,
+        }
+
+    async def _handle_vector_search(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Execute vector search via the HybridRetriever."""
+        if self._hybrid_retriever is None:
+            return {
+                "error": "Vector search is not available. Hybrid retriever not configured.",
+                "success": False,
+            }
+        query: str = args["query"]
+        limit = args.get("limit", 5)
+        filters = args.get("filters")
+        context: dict[str, Any] = {
+            "action": "vector_search",
+            "limit": limit,
+            "filters": filters,
+        }
+        result = await self._hybrid_retriever.retrieve(query, context)
         return {
             "success": result.success,
             "data": result.data,
