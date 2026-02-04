@@ -39,9 +39,9 @@ def _error_result() -> RetrievalResult:
 # --- AGENT_TOOLS definition tests ---
 
 
-def test_agent_tools_has_three_definitions() -> None:
-    """AGENT_TOOLS contains exactly 3 tool definitions."""
-    assert len(AGENT_TOOLS) == 3
+def test_agent_tools_has_four_definitions() -> None:
+    """AGENT_TOOLS contains exactly 4 tool definitions."""
+    assert len(AGENT_TOOLS) == 4
 
 
 def test_agent_tools_names() -> None:
@@ -49,6 +49,7 @@ def test_agent_tools_names() -> None:
     names = {tool.name for tool in AGENT_TOOLS}
     assert names == {
         "execute_cypher",
+        "vector_search",
         "expand_node",
         "submit_answer",
     }
@@ -70,6 +71,16 @@ def test_expand_node_requires_node_id() -> None:
     assert "relationship_types" in tool.parameters["properties"]
     assert "depth" in tool.parameters["properties"]
     assert tool.parameters["properties"]["depth"]["default"] == 1
+
+
+def test_vector_search_requires_query() -> None:
+    """vector_search tool requires 'query' with optional limit and filters."""
+    tool = next(t for t in AGENT_TOOLS if t.name == "vector_search")
+    assert tool.parameters["required"] == ["query"]
+    assert "query" in tool.parameters["properties"]
+    assert "limit" in tool.parameters["properties"]
+    assert "filters" in tool.parameters["properties"]
+    assert tool.parameters["properties"]["limit"]["default"] == 5
 
 
 def test_submit_answer_requires_all_fields() -> None:
@@ -200,6 +211,91 @@ async def test_execute_cypher_returns_error_from_retriever(
     assert result["success"] is False
     assert result["data"] == []
     assert "failed" in result["message"].lower()
+
+
+# --- vector_search handler tests ---
+
+
+@pytest.mark.anyio
+async def test_vector_search_calls_hybrid_retriever(
+    router: ToolRouter,
+    mock_hybrid_retriever: MagicMock,
+) -> None:
+    """vector_search handler passes query and context to HybridRetriever."""
+    mock_hybrid_retriever.retrieve.return_value = _success_result()
+    tool_call = ToolCall(
+        id="2",
+        name="vector_search",
+        arguments={"query": "movies about AI", "limit": 3, "filters": {"must": []}},
+    )
+
+    await router.route(tool_call)
+
+    mock_hybrid_retriever.retrieve.assert_awaited_once_with(
+        "movies about AI",
+        {"action": "vector_search", "limit": 3, "filters": {"must": []}},
+    )
+
+
+@pytest.mark.anyio
+async def test_vector_search_defaults(
+    router: ToolRouter,
+    mock_hybrid_retriever: MagicMock,
+) -> None:
+    """vector_search handler defaults limit to 5 and filters to None."""
+    mock_hybrid_retriever.retrieve.return_value = _success_result()
+    tool_call = ToolCall(
+        id="2",
+        name="vector_search",
+        arguments={"query": "find movies"},
+    )
+
+    await router.route(tool_call)
+
+    _, context = mock_hybrid_retriever.retrieve.await_args[0]
+    assert context["limit"] == 5
+    assert context["filters"] is None
+
+
+@pytest.mark.anyio
+async def test_vector_search_returns_success(
+    router: ToolRouter,
+    mock_hybrid_retriever: MagicMock,
+) -> None:
+    """vector_search handler returns success result with data and message."""
+    expected_data = [
+        {"uuid": "node-1", "score": 0.9},
+        {"uuid": "node-2", "score": 0.8},
+    ]
+    mock_hybrid_retriever.retrieve.return_value = _success_result(expected_data)
+    tool_call = ToolCall(
+        id="2",
+        name="vector_search",
+        arguments={"query": "find movies"},
+    )
+
+    result = await router.route(tool_call)
+
+    assert result["success"] is True
+    assert result["data"] == expected_data
+    assert "message" in result
+
+
+@pytest.mark.anyio
+async def test_vector_search_unavailable_without_hybrid_retriever(
+    router_cypher_only: ToolRouter,
+) -> None:
+    """vector_search returns error when hybrid retriever is not configured."""
+    tool_call = ToolCall(
+        id="2",
+        name="vector_search",
+        arguments={"query": "find movies"},
+    )
+
+    result = await router_cypher_only.route(tool_call)
+
+    assert result["success"] is False
+    assert "not available" in result["error"]
 
 
 # --- expand_node handler tests ---

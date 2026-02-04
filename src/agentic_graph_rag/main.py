@@ -14,7 +14,9 @@ from agentic_graph_rag.graph.neo4j_client import Neo4jClient
 from agentic_graph_rag.llm.openai_client import OpenAILLMClient
 from agentic_graph_rag.prompts.manager import PromptManager
 from agentic_graph_rag.retriever.cypher_retriever import CypherRetriever
+from agentic_graph_rag.retriever.hybrid_retriever import HybridRetriever
 from agentic_graph_rag.ui import TerminalUI
+from agentic_graph_rag.vector.qdrant_client import QdrantVectorStore
 
 
 async def main() -> int:
@@ -55,9 +57,23 @@ async def main() -> int:
             await llm_client.aclose()
             return 1
 
-        # Create retriever and tool router
+        # Create retrievers and tool router
         cypher_retriever = CypherRetriever(graph_db)
-        tool_router = ToolRouter(cypher_retriever=cypher_retriever)
+        vector_store = QdrantVectorStore(
+            settings=settings,
+            collection_name=settings.qdrant_collection,
+            vector_size=settings.embedding_dim,
+        )
+        hybrid_retriever = HybridRetriever(
+            graph_db=graph_db,
+            vector_store=vector_store,
+            llm_client=llm_client,
+            uuid_property=settings.node_uuid_property,
+        )
+        tool_router = ToolRouter(
+            cypher_retriever=cypher_retriever,
+            hybrid_retriever=hybrid_retriever,
+        )
 
         # Create prompt manager and config
         prompt_manager = PromptManager()

@@ -10,6 +10,7 @@ import json
 import os
 import re
 import sys
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Iterator
@@ -55,6 +56,11 @@ NODE_CONSTRAINTS = [
 ]
 
 LABEL_TOKEN_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+PROPERTY_TOKEN_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+NODE_UUID_PROPERTY = os.getenv("NODE_UUID_PROPERTY", "uuid")
+if not PROPERTY_TOKEN_PATTERN.match(NODE_UUID_PROPERTY):
+    raise RuntimeError("NODE_UUID_PROPERTY must be a valid Neo4j property token.")
 
 
 def _node_merge_query(label: str) -> str:
@@ -62,6 +68,7 @@ def _node_merge_query(label: str) -> str:
         "UNWIND $rows AS row "
         f"MERGE (n:{TEMP_LOAD_LABEL} {{id: row.id}}) "
         "SET n += row.properties "
+        f"SET n.{NODE_UUID_PROPERTY} = coalesce(n.{NODE_UUID_PROPERTY}, row.uuid) "
         f"SET n:{label}"
     )
 
@@ -258,7 +265,12 @@ def _node_row(raw: dict[str, Any]) -> dict[str, Any]:
     label_source = schema_type or fallback_label or "unclassified"
     label_token = _to_neo4j_token(str(label_source), prefix="Type")
     properties["schema_type_label"] = label_token
-    return {"id": node_id, "label": label_token, "properties": properties}
+    return {
+        "id": node_id,
+        "label": label_token,
+        "properties": properties,
+        "uuid": str(uuid.uuid4()),
+    }
 
 
 def _edge_row(raw: dict[str, Any]) -> dict[str, Any]:

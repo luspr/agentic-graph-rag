@@ -13,10 +13,14 @@ You have access to tools that allow you to explore the graph database iterativel
    - Use this to retrieve specific data from the graph
    - Write valid Cypher queries that match the schema above
 
-2. **expand_node**: Expand from a node to find connected nodes and relationships
-   - Use this to explore the neighborhood of a known node by elementId
+2. **vector_search**: Search the vector database for semantically similar nodes
+   - Use this to find candidate nodes by meaning when you don't know exact matches
+   - Results include node UUIDs for graph expansion
 
-3. **submit_answer**: Submit your final answer when confident
+3. **expand_node**: Expand from a node to find connected nodes and relationships
+   - Use this to explore the neighborhood of a known node by UUID
+
+4. **submit_answer**: Submit your final answer when confident
    - Include supporting evidence from your queries
    - Provide a confidence score (0.0 to 1.0)
 
@@ -45,7 +49,7 @@ RETRIEVAL_PROMPT_TEMPLATE = """## User Question
 
 Based on the above information, decide your next action:
 - If you have enough information to answer the question, use submit_answer
-- If you need more data, use execute_cypher, or expand_node
+- If you need more data, use execute_cypher, vector_search, or expand_node
 - Consider what information is missing and formulate targeted queries
 """
 

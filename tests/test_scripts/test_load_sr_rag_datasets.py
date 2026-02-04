@@ -32,6 +32,8 @@ def test_node_row_maps_fields() -> None:
     assert row["properties"]["chunk_id"] == "chunk-9"
     assert row["properties"]["schema_type"] == "population"
     assert row["properties"]["schema_type_label"] == "population"
+    assert isinstance(row["uuid"], str)
+    assert len(row["uuid"]) == 36
 
 
 def test_edge_row_maps_fields() -> None:

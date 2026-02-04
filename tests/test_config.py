@@ -29,6 +29,9 @@ def test_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
         "OPENAI_MODEL",
         "QDRANT_HOST",
         "QDRANT_PORT",
+        "QDRANT_COLLECTION",
+        "EMBEDDING_DIM",
+        "NODE_UUID_PROPERTY",
         "MAX_ITERATIONS",
         "MAX_HISTORY_MESSAGES",
     ):
@@ -39,6 +42,9 @@ def test_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.openai_model == "gpt-5.2"
     assert settings.qdrant_host == "localhost"
     assert settings.qdrant_port == 6333
+    assert settings.qdrant_collection == "graph_nodes"
+    assert settings.embedding_dim == 1536
+    assert settings.node_uuid_property == "uuid"
     assert settings.max_iterations == 10
     assert settings.max_history_messages == 10
 
@@ -52,6 +58,9 @@ def test_settings_overrides_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("NEO4J_PASSWORD", "secret")
     monkeypatch.setenv("QDRANT_HOST", "qdrant.example.com")
     monkeypatch.setenv("QDRANT_PORT", "6334")
+    monkeypatch.setenv("QDRANT_COLLECTION", "custom_collection")
+    monkeypatch.setenv("EMBEDDING_DIM", "128")
+    monkeypatch.setenv("NODE_UUID_PROPERTY", "node_uuid")
     monkeypatch.setenv("MAX_ITERATIONS", "5")
     monkeypatch.setenv("MAX_HISTORY_MESSAGES", "3")
 
@@ -60,6 +69,9 @@ def test_settings_overrides_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.openai_model == "gpt-4o"
     assert settings.qdrant_host == "qdrant.example.com"
     assert settings.qdrant_port == 6334
+    assert settings.qdrant_collection == "custom_collection"
+    assert settings.embedding_dim == 128
+    assert settings.node_uuid_property == "node_uuid"
     assert settings.max_iterations == 5
     assert settings.max_history_messages == 3
 
