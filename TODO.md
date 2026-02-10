@@ -726,7 +726,7 @@ state: todo
 
 ### Task 7.3: Implement multi-query vector seeding with rank fusion
 
-state: todo
+state: done
 
 **Context / Background:**
 - Current hybrid retrieval uses one query embedding and one vector search call.
@@ -745,9 +745,9 @@ state: todo
 - `tests/test_retriever/test_hybrid_retriever.py`
 
 **Acceptance Criteria:**
-- [ ] Hybrid retrieval executes vector search across multiple query variants.
-- [ ] Fused ranking is deterministic for fixed inputs.
-- [ ] Returned seeds include query-variant provenance metadata.
+- [x] Hybrid retrieval executes vector search across multiple query variants.
+- [x] Fused ranking is deterministic for fixed inputs.
+- [x] Returned seeds include query-variant provenance metadata.
 
 ### Task 7.4: Return path-level evidence from graph expansion
 
