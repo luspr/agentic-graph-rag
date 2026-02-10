@@ -691,3 +691,367 @@ state: todo
 **Acceptance Criteria:**
 - [ ] Pre-commit cache location guidance is documented.
 - [ ] Developers can run hooks without cache permission errors.
+
+---
+
+## Phase 7: SOTA Hybrid Agentic Retrieval (Vector + Graph)
+
+### Task 7.1: Extend retrieval result model with hybrid artifacts
+
+state: todo
+
+**Context / Background:**
+- `RetrievalResult` currently carries `data`, `steps`, `success`, and `message`.
+- Hybrid upgrades need structured metadata for ranking, coverage checks, and traceability.
+
+**Task Description:**
+- Extend retrieval models to support optional hybrid artifacts:
+  - seed provenance,
+  - per-candidate scores,
+  - coverage summary,
+  - contradiction flags.
+- Keep backward compatibility for existing call sites and tests.
+
+**Files:**
+- `src/agentic_graph_rag/retriever/base.py`
+- `tests/test_retriever/test_cypher_retriever.py`
+- `tests/test_retriever/test_hybrid_retriever.py`
+
+**Acceptance Criteria:**
+- [ ] `RetrievalResult` supports optional artifact metadata fields.
+- [ ] Existing retrievers work without populating new fields.
+- [ ] Unit tests validate backward compatibility and artifact behavior.
+
+### Task 7.2: Add configuration knobs for advanced hybrid retrieval
+
+state: todo
+
+**Context / Background:**
+- Advanced hybrid behavior needs runtime controls for planner usage, graph rerank backend,
+  and retrieval budgets.
+- Current settings do not expose these controls.
+
+**Task Description:**
+- Add settings for:
+  - planner enablement,
+  - graph rerank backend (`gds` or fallback),
+  - frontier/path/token budgets.
+- Add validation with clear error messages and defaults.
+
+**Files:**
+- `src/agentic_graph_rag/config.py`
+- `tests/test_config.py`
+- `README.md`
+
+**Acceptance Criteria:**
+- [ ] New settings exist with sane defaults.
+- [ ] Invalid values raise clear validation errors.
+- [ ] README documents all new settings.
+
+### Task 7.3: Implement multi-query vector seeding with rank fusion
+
+state: todo
+
+**Context / Background:**
+- Current hybrid retrieval uses one query embedding and one vector search call.
+- Multi-query seeding improves recall for ambiguous and compositional questions.
+
+**Task Description:**
+- Add query variant generation in `HybridRetriever`:
+  - original query,
+  - entity-focused rewrite,
+  - hypothesis-style rewrite.
+- Run vector search for each variant and fuse results with Reciprocal Rank Fusion (RRF).
+- Track provenance of which variant retrieved each seed.
+
+**Files:**
+- `src/agentic_graph_rag/retriever/hybrid_retriever.py`
+- `tests/test_retriever/test_hybrid_retriever.py`
+
+**Acceptance Criteria:**
+- [ ] Hybrid retrieval executes vector search across multiple query variants.
+- [ ] Fused ranking is deterministic for fixed inputs.
+- [ ] Returned seeds include query-variant provenance metadata.
+
+### Task 7.4: Return path-level evidence from graph expansion
+
+state: todo
+
+**Context / Background:**
+- Current `expand_node` output is node-collapsed and loses path detail.
+- Path-level evidence is required for stronger reasoning and verification.
+
+**Task Description:**
+- Update expansion logic to return one record per path with:
+  - `start_uuid`,
+  - `end_uuid`,
+  - `path_length`,
+  - ordered `path_nodes`,
+  - ordered `path_rels` with direction metadata.
+- Add optional controls:
+  - `direction`,
+  - `max_paths`,
+  - `max_branching`.
+
+**Files:**
+- `src/agentic_graph_rag/retriever/hybrid_retriever.py`
+- `src/agentic_graph_rag/agent/tools.py`
+- `tests/test_retriever/test_hybrid_retriever.py`
+- `tests/test_agent/test_tools.py`
+
+**Acceptance Criteria:**
+- [ ] Expansion returns path-level records with ordered nodes/relationships.
+- [ ] Directionality is preserved in returned evidence.
+- [ ] Optional traversal controls are wired and tested.
+- [ ] Existing calls without new args remain valid.
+
+### Task 7.5: Add hybrid score blending for candidate ranking
+
+state: todo
+
+**Context / Background:**
+- Current ranking is dominated by raw vector similarity.
+- Better hybrid quality requires graph-aware ranking signals.
+
+**Task Description:**
+- Add a ranking blend combining:
+  - vector relevance,
+  - graph/path quality,
+  - relation priors.
+- Include simple penalties/bonuses for hubs, novelty, and path length.
+- Keep weights configurable via constants/settings.
+
+**Files:**
+- `src/agentic_graph_rag/retriever/hybrid_retriever.py`
+- `tests/test_retriever/test_hybrid_retriever.py`
+
+**Acceptance Criteria:**
+- [ ] Ranking uses blended hybrid scores, not vector score alone.
+- [ ] Ranking output is deterministic for fixed input.
+- [ ] Unit tests cover scoring behavior and edge cases.
+
+### Task 7.6: Add compact hybrid-specific prompt/result formatting
+
+state: todo
+
+**Context / Background:**
+- Generic result formatting is too verbose for hybrid vector/path outputs.
+- Prompt quality and cost improve with compact, stable evidence packaging.
+
+**Task Description:**
+- Add hybrid-specific formatting in prompt manager:
+  - top seeds with score + provenance,
+  - top paths with evidence IDs,
+  - compact coverage summary.
+- Add deterministic truncation for large payloads.
+
+**Files:**
+- `src/agentic_graph_rag/prompts/manager.py`
+- `src/agentic_graph_rag/agent/controller.py`
+- `tests/test_prompts/test_manager.py`
+- `tests/test_agent/test_controller.py`
+
+**Acceptance Criteria:**
+- [ ] Hybrid results are formatted in a compact, consistent structure.
+- [ ] Large payloads are truncated deterministically.
+- [ ] Tests validate stability of formatted output.
+
+### Task 7.7: Add optional retrieval strategy `hybrid_planned`
+
+state: todo
+
+**Context / Background:**
+- We want planner guidance as an optional strategy while keeping the existing loop model.
+- Strategy plumbing must remain backward compatible.
+
+**Task Description:**
+- Add `hybrid_planned` as a strategy value in retrieval/config/runner/CLI flow.
+- Keep the same iterative tool-calling execution loop in controller.
+
+**Files:**
+- `src/agentic_graph_rag/retriever/base.py`
+- `src/agentic_graph_rag/agent/state.py`
+- `src/agentic_graph_rag/runner.py`
+- `src/agentic_graph_rag/cli.py`
+- `tests/test_agent/test_controller.py`
+- `tests/test_cli.py`
+
+**Acceptance Criteria:**
+- [ ] `hybrid_planned` is selectable via existing configuration/CLI surfaces.
+- [ ] Existing `cypher` and `hybrid` behavior is unchanged.
+- [ ] Controller still uses the same iterative loop pattern.
+
+### Task 7.8: Add light planner intents for hybrid planned mode
+
+state: todo
+
+**Context / Background:**
+- Planner-style decomposition improves retrieval direction.
+- We explicitly do not want a full DAG executor in this phase.
+
+**Task Description:**
+- Implement a light planner that emits retrieval intents:
+  - objective,
+  - constraints,
+  - seed hints,
+  - relation hints,
+  - stop hints.
+- Feed intents into retrieval context and tool selection guidance only.
+
+**Files:**
+- `src/agentic_graph_rag/retriever/hybrid_retriever.py`
+- `src/agentic_graph_rag/agent/controller.py`
+- `src/agentic_graph_rag/prompts/manager.py`
+- `tests/test_retriever/test_hybrid_retriever.py`
+- `tests/test_agent/test_controller.py`
+
+**Acceptance Criteria:**
+- [ ] Planner emits structured intents in `hybrid_planned` mode.
+- [ ] Intents influence retrieval behavior/context.
+- [ ] No DAG executor is introduced.
+
+### Task 7.9: Add coverage and contradiction checks between iterations
+
+state: todo
+
+**Context / Background:**
+- The agent can currently answer with partial or conflicting evidence.
+- Iterative quality gates are required for better faithfulness.
+
+**Task Description:**
+- Add per-iteration checks for:
+  - constraint coverage completeness,
+  - evidence contradictions/conflicts.
+- Produce structured signals for retry/backtrack/focused expansion.
+
+**Files:**
+- `src/agentic_graph_rag/agent/controller.py`
+- `src/agentic_graph_rag/retriever/hybrid_retriever.py`
+- `src/agentic_graph_rag/agent/state.py`
+- `tests/test_agent/test_controller.py`
+- `tests/test_retriever/test_hybrid_retriever.py`
+
+**Acceptance Criteria:**
+- [ ] Coverage status is computed and exposed per iteration.
+- [ ] Contradiction signals are surfaced in state/retrieval artifacts.
+- [ ] Tests validate retry/backtrack recommendations.
+
+### Task 7.10: Add graph reranking service (GDS with fallback)
+
+state: todo
+
+**Context / Background:**
+- Graph ranking from vector seeds is a major quality lever.
+- Preferred backend is Neo4j GDS; fallback is needed for portability.
+
+**Task Description:**
+- Add reranking pipeline:
+  - use GDS Personalized PageRank when available,
+  - fallback to Cypher heuristic ranking when unavailable.
+- Integrate reranked frontier into expansion order.
+
+**Files:**
+- `src/agentic_graph_rag/retriever/hybrid_retriever.py`
+- `src/agentic_graph_rag/graph/neo4j_client.py`
+- `src/agentic_graph_rag/config.py`
+- `tests/test_retriever/test_hybrid_retriever.py`
+- `tests/test_graph/test_neo4j_client.py`
+
+**Acceptance Criteria:**
+- [ ] GDS-backed reranking works when available.
+- [ ] Fallback path works when GDS is unavailable.
+- [ ] Backend selection and fallback behavior are tested.
+
+### Task 7.11: Enforce frontier and token budgets in hybrid retrieval
+
+state: todo
+
+**Context / Background:**
+- Retrieval needs explicit budget controls to contain latency and token cost.
+- Current flow does not enforce frontier/path/evidence budgets consistently.
+
+**Task Description:**
+- Enforce configurable limits for:
+  - frontier nodes,
+  - total paths,
+  - prompt token budget for evidence.
+- Prioritize high-value evidence under budget.
+
+**Files:**
+- `src/agentic_graph_rag/retriever/hybrid_retriever.py`
+- `src/agentic_graph_rag/prompts/manager.py`
+- `src/agentic_graph_rag/config.py`
+- `tests/test_retriever/test_hybrid_retriever.py`
+- `tests/test_prompts/test_manager.py`
+
+**Acceptance Criteria:**
+- [ ] Hybrid retrieval enforces configured frontier/path limits.
+- [ ] Evidence packaging respects configured prompt budget.
+- [ ] Truncation/prioritization order is deterministic and tested.
+
+### Task 7.12: Extend eval with retrieval-quality metrics
+
+state: todo
+
+**Context / Background:**
+- Current evaluation is answer-centric.
+- Retrieval upgrades require retrieval-centric KPIs for iteration decisions.
+
+**Task Description:**
+- Add retrieval metrics:
+  - seed recall@k,
+  - path evidence precision,
+  - constraint coverage rate,
+  - iterations-to-convergence.
+- Include metrics in per-example outputs and summary aggregates.
+
+**Files:**
+- `src/agentic_graph_rag/eval/types.py`
+- `src/agentic_graph_rag/eval/metrics.py`
+- `src/agentic_graph_rag/eval/runner.py`
+- `tests/test_eval/test_metrics.py`
+- `tests/test_eval/test_runner.py`
+- `README.md`
+
+**Acceptance Criteria:**
+- [ ] Retrieval-quality metrics are computed and serialized.
+- [ ] Summary aggregates include new retrieval metrics.
+- [ ] Existing answer metrics remain backward compatible.
+
+### Task 7.13: Add token-aware chat compaction with rolling summaries
+
+state: todo
+
+**Context / Background:**
+- The controller appends messages across iterations and chat history can grow large.
+- Long-running sessions risk context-window overflow, degraded responses, or hard API errors.
+- Current behavior is not token-aware and does not compact history by budget.
+
+**Task Description:**
+- Add token-aware context management for chat/session history:
+  - estimate token usage before each LLM call,
+  - compact older messages when a configured threshold is reached,
+  - replace compacted segments with a rolling summary that preserves key facts,
+    decisions, tool outcomes, and unresolved questions.
+- Preserve critical context during compaction:
+  - system prompt,
+  - latest user request,
+  - recent turns,
+  - high-value retrieval evidence needed for answer faithfulness.
+- Add config knobs for compaction thresholds and retained recent-turn window.
+
+**Files:**
+- `src/agentic_graph_rag/agent/controller.py`
+- `src/agentic_graph_rag/agent/session.py`
+- `src/agentic_graph_rag/prompts/manager.py`
+- `src/agentic_graph_rag/config.py`
+- `tests/test_agent/test_controller.py`
+- `tests/test_agent/test_session.py`
+- `tests/test_prompts/test_manager.py`
+
+**Acceptance Criteria:**
+- [ ] Controller compacts history automatically when token budget threshold is exceeded.
+- [ ] Compaction preserves system prompt and most recent conversational context.
+- [ ] Rolling summary includes key facts, tool results, and unresolved items.
+- [ ] Configurable thresholds control when and how much history is compacted.
+- [ ] Unit tests cover compaction trigger, summary injection, and no-compaction paths.
