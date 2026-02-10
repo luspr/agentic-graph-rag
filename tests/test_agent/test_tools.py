@@ -64,13 +64,18 @@ def test_execute_cypher_requires_query_and_reasoning() -> None:
 
 
 def test_expand_node_requires_node_id() -> None:
-    """expand_node tool requires 'node_id' with optional relationship_types and depth."""
+    """expand_node tool requires 'node_id' with optional relationship_types, depth, direction, max_paths."""
     tool = next(t for t in AGENT_TOOLS if t.name == "expand_node")
     assert tool.parameters["required"] == ["node_id"]
     assert "node_id" in tool.parameters["properties"]
     assert "relationship_types" in tool.parameters["properties"]
     assert "depth" in tool.parameters["properties"]
     assert tool.parameters["properties"]["depth"]["default"] == 1
+    assert "direction" in tool.parameters["properties"]
+    assert tool.parameters["properties"]["direction"]["default"] == "both"
+    assert tool.parameters["properties"]["direction"]["enum"] == ["out", "in", "both"]
+    assert "max_paths" in tool.parameters["properties"]
+    assert tool.parameters["properties"]["max_paths"]["default"] == 20
 
 
 def test_vector_search_requires_query() -> None:
@@ -327,6 +332,8 @@ async def test_expand_node_calls_hybrid_retriever(
             "node_id": "node_42",
             "relationship_types": ["ACTED_IN"],
             "depth": 2,
+            "direction": "both",
+            "max_paths": 20,
         },
     )
 
@@ -336,7 +343,7 @@ async def test_expand_node_defaults(
     router: ToolRouter,
     mock_hybrid_retriever: MagicMock,
 ) -> None:
-    """expand_node handler defaults depth to 1 and relationship_types to None."""
+    """expand_node handler defaults depth, direction, max_paths, and relationship_types."""
     mock_hybrid_retriever.retrieve.return_value = _success_result()
     tool_call = ToolCall(
         id="3",
@@ -349,6 +356,8 @@ async def test_expand_node_defaults(
     _, context = mock_hybrid_retriever.retrieve.await_args[0]
     assert context["depth"] == 1
     assert context["relationship_types"] is None
+    assert context["direction"] == "both"
+    assert context["max_paths"] == 20
 
 
 @pytest.mark.anyio
@@ -372,6 +381,30 @@ async def test_expand_node_returns_success(
 
     assert result["success"] is True
     assert result["data"] == expected_data
+
+
+@pytest.mark.anyio
+async def test_expand_node_passes_direction_and_max_paths(
+    router: ToolRouter,
+    mock_hybrid_retriever: MagicMock,
+) -> None:
+    """expand_node handler forwards direction and max_paths to the retriever."""
+    mock_hybrid_retriever.retrieve.return_value = _success_result()
+    tool_call = ToolCall(
+        id="3",
+        name="expand_node",
+        arguments={
+            "node_id": "node_42",
+            "direction": "out",
+            "max_paths": 5,
+        },
+    )
+
+    await router.route(tool_call)
+
+    _, context = mock_hybrid_retriever.retrieve.await_args[0]
+    assert context["direction"] == "out"
+    assert context["max_paths"] == 5
 
 
 @pytest.mark.anyio
