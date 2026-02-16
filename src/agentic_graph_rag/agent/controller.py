@@ -93,7 +93,9 @@ class AgentController:
 
         # Get schema and build system prompt
         schema = await self._graph_db.get_schema()
-        system_prompt = self._prompt_manager.build_system_prompt(schema)
+        system_prompt = self._prompt_manager.build_system_prompt(
+            schema, strategy=self._config.strategy
+        )
 
         self._messages = [{"role": "system", "content": system_prompt}]
         if history_messages:

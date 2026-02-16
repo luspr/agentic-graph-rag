@@ -4,7 +4,7 @@ import pytest
 
 from agentic_graph_rag.graph.base import GraphSchema, NodeType, RelationshipType
 from agentic_graph_rag.prompts.manager import PromptContext, PromptManager
-from agentic_graph_rag.retriever.base import RetrievalStep
+from agentic_graph_rag.retriever.base import RetrievalStep, RetrievalStrategy
 
 
 @pytest.fixture
@@ -392,3 +392,107 @@ def test_build_system_prompt_relationship_without_properties(
     assert "LIKES" in prompt
     assert "Person" in prompt
     assert "Movie" in prompt
+
+
+# --- Hybrid strategy prompt tests ---
+
+
+def test_build_system_prompt_hybrid_includes_strategy_guidance(
+    prompt_manager: PromptManager,
+    sample_schema: GraphSchema,
+) -> None:
+    """Hybrid system prompt includes the retrieval strategy workflow."""
+    prompt = prompt_manager.build_system_prompt(
+        sample_schema, strategy=RetrievalStrategy.HYBRID
+    )
+
+    assert "hybrid retrieval strategy" in prompt.lower()
+    assert "Seed" in prompt
+    assert "Expand" in prompt
+    assert "Verify" in prompt
+
+
+def test_build_system_prompt_hybrid_includes_all_tools(
+    prompt_manager: PromptManager,
+    sample_schema: GraphSchema,
+) -> None:
+    """Hybrid system prompt includes all tool descriptions."""
+    prompt = prompt_manager.build_system_prompt(
+        sample_schema, strategy=RetrievalStrategy.HYBRID
+    )
+
+    assert "vector_search" in prompt
+    assert "expand_node" in prompt
+    assert "execute_cypher" in prompt
+    assert "submit_answer" in prompt
+
+
+def test_build_system_prompt_hybrid_includes_expand_node_details(
+    prompt_manager: PromptManager,
+    sample_schema: GraphSchema,
+) -> None:
+    """Hybrid system prompt explains expand_node path-level output."""
+    prompt = prompt_manager.build_system_prompt(
+        sample_schema, strategy=RetrievalStrategy.HYBRID
+    )
+
+    assert "path_nodes" in prompt
+    assert "path_rels" in prompt
+    assert "path_length" in prompt
+    assert "start_uuid" in prompt
+    assert "end_uuid" in prompt
+
+
+def test_build_system_prompt_hybrid_includes_schema(
+    prompt_manager: PromptManager,
+    sample_schema: GraphSchema,
+) -> None:
+    """Hybrid system prompt includes the graph schema."""
+    prompt = prompt_manager.build_system_prompt(
+        sample_schema, strategy=RetrievalStrategy.HYBRID
+    )
+
+    assert "Person" in prompt
+    assert "Movie" in prompt
+    assert "ACTED_IN" in prompt
+    assert "DIRECTED" in prompt
+
+
+def test_build_system_prompt_hybrid_explains_direction(
+    prompt_manager: PromptManager,
+    sample_schema: GraphSchema,
+) -> None:
+    """Hybrid system prompt explains relationship direction significance."""
+    prompt = prompt_manager.build_system_prompt(
+        sample_schema, strategy=RetrievalStrategy.HYBRID
+    )
+
+    assert "direction" in prompt.lower()
+    assert "from_uuid" in prompt or "to_uuid" in prompt
+
+
+def test_build_system_prompt_cypher_does_not_include_hybrid_strategy(
+    prompt_manager: PromptManager,
+    sample_schema: GraphSchema,
+) -> None:
+    """Cypher strategy uses the generic prompt, not the hybrid one."""
+    prompt = prompt_manager.build_system_prompt(
+        sample_schema, strategy=RetrievalStrategy.CYPHER
+    )
+
+    assert "hybrid retrieval strategy" not in prompt.lower()
+    # Still uses the generic template
+    assert "execute_cypher" in prompt
+
+
+def test_build_system_prompt_default_strategy_is_cypher(
+    prompt_manager: PromptManager,
+    sample_schema: GraphSchema,
+) -> None:
+    """build_system_prompt defaults to the generic cypher template."""
+    prompt_default = prompt_manager.build_system_prompt(sample_schema)
+    prompt_cypher = prompt_manager.build_system_prompt(
+        sample_schema, strategy=RetrievalStrategy.CYPHER
+    )
+
+    assert prompt_default == prompt_cypher
