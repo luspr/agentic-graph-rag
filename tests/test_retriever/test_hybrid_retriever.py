@@ -9,8 +9,10 @@ from agentic_graph_rag.llm.base import LLMClient
 from agentic_graph_rag.retriever.base import RetrievalStrategy
 from agentic_graph_rag.retriever.hybrid_retriever import (
     HybridRetriever,
+    HybridScoreWeights,
     _apply_max_branching,
     _build_expand_query,
+    blend_scores,
 )
 from agentic_graph_rag.vector.base import VectorSearchResult, VectorStore
 
@@ -636,3 +638,140 @@ async def test_expand_node_max_branching_none_by_default(
 
     step = result.steps[0]
     assert step.input["max_branching"] is None
+
+
+# --- blend_scores tests ---
+
+
+def _make_candidate(uuid: str, score: float, payload: dict | None = None) -> dict:
+    return {
+        "uuid": uuid,
+        "score": score,
+        "payload": payload or {},
+        "provenance": [
+            {"variant": "original", "query": "q", "rank": 1, "vector_score": score}
+        ],
+    }
+
+
+def _make_graph_path(
+    end_uuid: str,
+    path_length: int = 1,
+    path_rels: list[dict] | None = None,
+    path_nodes: list[dict] | None = None,
+) -> dict:
+    return {
+        "start_uuid": "root",
+        "end_uuid": end_uuid,
+        "node_labels": ["Node"],
+        "path_length": path_length,
+        "path_nodes": path_nodes or [],
+        "path_rels": path_rels or [],
+    }
+
+
+def test_blend_scores_empty_candidates() -> None:
+    """Empty input returns empty list."""
+    assert blend_scores([]) == []
+
+
+def test_blend_scores_vector_only() -> None:
+    """Without graph paths, ranking follows vector score order."""
+    candidates = [
+        _make_candidate("A", 0.5),
+        _make_candidate("B", 0.9),
+        _make_candidate("C", 0.7),
+    ]
+    result = blend_scores(candidates, graph_paths=None)
+    assert [r["uuid"] for r in result] == ["B", "C", "A"]
+    for r in result:
+        assert "blended_score" in r
+        assert "score_components" in r
+        assert r["score_components"]["graph"] == 0.0
+
+
+def test_blend_scores_with_graph_paths() -> None:
+    """Graph paths influence ranking — shorter path boosts candidate."""
+    candidates = [
+        _make_candidate("A", 0.9),
+        _make_candidate("B", 0.8),
+    ]
+    graph_paths = [
+        _make_graph_path("B", path_length=1, path_rels=[{"type": "ACTED_IN"}]),
+    ]
+    result = blend_scores(candidates, graph_paths=graph_paths)
+    # B gets a graph boost; check that its graph component is non-zero
+    b_result = next(r for r in result if r["uuid"] == "B")
+    assert b_result["score_components"]["graph"] > 0.0
+    a_result = next(r for r in result if r["uuid"] == "A")
+    assert a_result["score_components"]["graph"] == 0.0
+
+
+def test_blend_scores_hub_penalty() -> None:
+    """Hub nodes appearing in many paths get penalized."""
+    candidates = [
+        _make_candidate("hub", 0.9),
+        _make_candidate("leaf", 0.85),
+    ]
+    graph_paths = [
+        _make_graph_path("hub", path_length=1, path_rels=[{"type": "R1"}]),
+        _make_graph_path("hub", path_length=2, path_rels=[{"type": "R2"}]),
+        _make_graph_path("hub", path_length=3, path_rels=[{"type": "R3"}]),
+        _make_graph_path("leaf", path_length=1, path_rels=[{"type": "R1"}]),
+    ]
+    result = blend_scores(candidates, graph_paths=graph_paths)
+    hub_result = next(r for r in result if r["uuid"] == "hub")
+    assert hub_result["score_components"]["hub_penalty"] > 0.0
+    leaf_result = next(r for r in result if r["uuid"] == "leaf")
+    assert leaf_result["score_components"]["hub_penalty"] == 0.0
+
+
+def test_blend_scores_novelty_bonus() -> None:
+    """Candidates with unique labels get a novelty bonus."""
+    candidates = [
+        _make_candidate("A", 0.9, payload={"labels": ["Movie"]}),
+        _make_candidate("B", 0.8, payload={"labels": ["Person"]}),
+    ]
+    result = blend_scores(candidates, graph_paths=None)
+    # First candidate processed gets novelty (all labels are new)
+    a_result = next(r for r in result if r["uuid"] == "A")
+    assert a_result["score_components"]["novelty"] > 0.0
+
+
+def test_blend_scores_deterministic() -> None:
+    """Same input always produces same output."""
+    candidates = [
+        _make_candidate("A", 0.5),
+        _make_candidate("B", 0.5),
+    ]
+    paths = [_make_graph_path("A", path_length=1, path_rels=[{"type": "R"}])]
+    result1 = blend_scores(candidates, graph_paths=paths)
+    result2 = blend_scores(candidates, graph_paths=paths)
+    assert [r["uuid"] for r in result1] == [r["uuid"] for r in result2]
+    assert [r["blended_score"] for r in result1] == [
+        r["blended_score"] for r in result2
+    ]
+
+
+def test_blend_scores_custom_weights() -> None:
+    """Custom HybridScoreWeights changes ranking outcome."""
+    candidates = [
+        _make_candidate("A", 0.9),
+        _make_candidate("B", 0.3),
+    ]
+    paths = [
+        _make_graph_path(
+            "B", path_length=1, path_rels=[{"type": "R1"}, {"type": "R2"}]
+        ),
+    ]
+    # Heavy graph weight should boost B despite lower vector score
+    heavy_graph = HybridScoreWeights(
+        vector_weight=0.1,
+        graph_weight=0.8,
+        novelty_weight=0.0,
+        relation_prior_weight=0.1,
+        hub_penalty_factor=0.0,
+        path_length_decay=0.2,
+    )
+    result = blend_scores(candidates, graph_paths=paths, weights=heavy_graph)
+    assert result[0]["uuid"] == "B"
