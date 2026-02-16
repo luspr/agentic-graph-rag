@@ -62,3 +62,11 @@ class GraphDatabase(ABC):
             Tuple of (is_valid, error_message).
         """
         ...
+
+    async def has_gds(self) -> bool:
+        """Check whether the Neo4j Graph Data Science library is available.
+
+        Returns:
+            True if GDS is installed and callable, False otherwise.
+        """
+        return False
