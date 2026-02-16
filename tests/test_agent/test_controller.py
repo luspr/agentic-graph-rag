@@ -648,3 +648,67 @@ async def test_run_handles_multiple_tool_calls(
     assert result.status == AgentStatus.COMPLETED
     # Both tool calls should be in history
     assert len(result.history) == 2
+
+
+# --- Strategy-aware system prompt tests ---
+
+
+@pytest.mark.anyio
+async def test_run_uses_hybrid_prompt_for_hybrid_strategy(
+    mock_llm_client: MagicMock,
+    mock_graph_db: MagicMock,
+    mock_tool_router: MagicMock,
+    mock_prompt_manager: PromptManager,
+) -> None:
+    """run() uses hybrid system prompt when strategy is HYBRID."""
+    config = AgentConfig(strategy=RetrievalStrategy.HYBRID)
+    controller = AgentController(
+        llm_client=mock_llm_client,
+        graph_db=mock_graph_db,
+        tool_router=mock_tool_router,
+        prompt_manager=mock_prompt_manager,
+        config=config,
+    )
+    mock_llm_client.complete.return_value = _make_llm_response(
+        tool_calls=[_submit_answer_tool_call()]
+    )
+    mock_tool_router.route.return_value = {
+        "success": True,
+        "answer": "Answer",
+        "confidence": 0.8,
+        "supporting_evidence": "Evidence",
+    }
+
+    await controller.run("Query")
+
+    call = mock_llm_client.complete.await_args
+    messages = call.kwargs["messages"]
+    system_content = messages[0]["content"]
+    assert "hybrid retrieval strategy" in system_content.lower()
+    assert "Seed" in system_content
+    assert "Expand" in system_content
+
+
+@pytest.mark.anyio
+async def test_run_uses_cypher_prompt_for_cypher_strategy(
+    controller: AgentController,
+    mock_llm_client: MagicMock,
+    mock_tool_router: MagicMock,
+) -> None:
+    """run() uses generic system prompt when strategy is CYPHER (default)."""
+    mock_llm_client.complete.return_value = _make_llm_response(
+        tool_calls=[_submit_answer_tool_call()]
+    )
+    mock_tool_router.route.return_value = {
+        "success": True,
+        "answer": "Answer",
+        "confidence": 0.8,
+        "supporting_evidence": "Evidence",
+    }
+
+    await controller.run("Query")
+
+    call = mock_llm_client.complete.await_args
+    messages = call.kwargs["messages"]
+    system_content = messages[0]["content"]
+    assert "hybrid retrieval strategy" not in system_content.lower()

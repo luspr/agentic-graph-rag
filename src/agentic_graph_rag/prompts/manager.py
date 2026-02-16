@@ -6,6 +6,7 @@ from typing import Any
 
 from agentic_graph_rag.graph.base import GraphSchema, NodeType, RelationshipType
 from agentic_graph_rag.prompts.templates import (
+    HYBRID_SYSTEM_PROMPT_TEMPLATE,
     NO_HISTORY_MESSAGE,
     NO_RESULTS_MESSAGE,
     RETRIEVAL_PROMPT_TEMPLATE,
@@ -14,7 +15,7 @@ from agentic_graph_rag.prompts.templates import (
     STEP_TEMPLATE,
     SYSTEM_PROMPT_TEMPLATE,
 )
-from agentic_graph_rag.retriever.base import RetrievalStep
+from agentic_graph_rag.retriever.base import RetrievalStep, RetrievalStrategy
 
 
 @dataclass
@@ -30,17 +31,27 @@ class PromptContext:
 class PromptManager:
     """Manages prompt construction and formatting."""
 
-    def build_system_prompt(self, schema: GraphSchema) -> str:
+    def build_system_prompt(
+        self,
+        schema: GraphSchema,
+        strategy: RetrievalStrategy = RetrievalStrategy.CYPHER,
+    ) -> str:
         """Build the system prompt with schema information.
 
         Args:
             schema: The graph schema containing node types and relationships.
+            strategy: The retrieval strategy, determines which prompt template to use.
 
         Returns:
             The formatted system prompt.
         """
         schema_text = self._format_schema(schema)
-        return SYSTEM_PROMPT_TEMPLATE.format(schema=schema_text)
+        template = (
+            HYBRID_SYSTEM_PROMPT_TEMPLATE
+            if strategy == RetrievalStrategy.HYBRID
+            else SYSTEM_PROMPT_TEMPLATE
+        )
+        return template.format(schema=schema_text)
 
     def build_retrieval_prompt(self, context: PromptContext) -> str:
         """Build prompt for retrieval iteration.
