@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from typing import Any
 
 from agentic_graph_rag.graph.base import GraphDatabase
@@ -16,6 +17,13 @@ from agentic_graph_rag.retriever.base import (
 from agentic_graph_rag.vector.base import VectorStore
 
 _PROPERTY_NAME_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_DEFAULT_RRF_K = 60
+
+
+@dataclass(frozen=True)
+class _QueryVariant:
+    name: str
+    text: str
 
 
 class HybridRetriever(Retriever):
@@ -87,21 +95,47 @@ class HybridRetriever(Retriever):
         """Run a vector search and return matching node UUIDs."""
         limit = _coerce_positive_int(context.get("limit"), default=5)
         filters = context.get("filters")
+        rrf_k = _coerce_positive_int(context.get("rrf_k"), default=_DEFAULT_RRF_K)
+        variants = _build_query_variants(query)
 
         step = RetrievalStep(
             action="vector_search",
-            input={"query": query, "limit": limit, "filters": filters},
+            input={
+                "query": query,
+                "limit": limit,
+                "filters": filters,
+                "rrf_k": rrf_k,
+                "query_variants": [
+                    {"variant": variant.name, "query": variant.text}
+                    for variant in variants
+                ],
+            },
             output={},
             error=None,
         )
 
+        variant_results: list[tuple[_QueryVariant, list[dict[str, Any]]]] = []
         try:
-            embedding = await self._llm_client.embed(query)
-            results = await self._vector_store.search(
-                embedding,
-                limit=limit,
-                filter=filters,
-            )
+            for variant in variants:
+                embedding = await self._llm_client.embed(variant.text)
+                results = await self._vector_store.search(
+                    embedding,
+                    limit=limit,
+                    filter=filters,
+                )
+                variant_results.append(
+                    (
+                        variant,
+                        [
+                            {
+                                "uuid": result.id,
+                                "vector_score": result.score,
+                                "payload": result.payload,
+                            }
+                            for result in results
+                        ],
+                    )
+                )
         except Exception as exc:
             step.error = str(exc)
             return RetrievalResult(
@@ -111,20 +145,26 @@ class HybridRetriever(Retriever):
                 message=f"Vector search failed: {exc}",
             )
 
-        data = [
-            {
-                "uuid": result.id,
-                "score": result.score,
-                "payload": result.payload,
-            }
-            for result in results
-        ]
-        step.output = {"data": data}
+        data = _fuse_with_rrf(variant_results, limit=limit, rrf_k=rrf_k)
+        step.output = {
+            "variant_results": [
+                {
+                    "variant": variant.name,
+                    "query": variant.text,
+                    "hits": len(results),
+                }
+                for variant, results in variant_results
+            ],
+            "data": data,
+        }
         return RetrievalResult(
             data=data,
             steps=[step],
             success=True,
-            message=f"Retrieved {len(data)} vector matches",
+            message=(
+                f"Retrieved {len(data)} fused vector matches from "
+                f"{len(variants)} query variants"
+            ),
         )
 
     async def _expand_node(
@@ -252,3 +292,75 @@ def _coerce_positive_int(value: Any, default: int) -> int:
     except (TypeError, ValueError):
         return default
     return parsed if parsed > 0 else default
+
+
+def _build_query_variants(query: str) -> list[_QueryVariant]:
+    normalized_query = " ".join(query.split())
+    return [
+        _QueryVariant(name="original", text=query),
+        _QueryVariant(
+            name="entity_focused",
+            text=f"Entity-focused rewrite: {normalized_query}",
+        ),
+        _QueryVariant(
+            name="hypothesis_style",
+            text=f"Hypothesis-style rewrite: {normalized_query}",
+        ),
+    ]
+
+
+def _fuse_with_rrf(
+    variant_results: list[tuple[_QueryVariant, list[dict[str, Any]]]],
+    *,
+    limit: int,
+    rrf_k: int,
+) -> list[dict[str, Any]]:
+    fused: dict[str, dict[str, Any]] = {}
+
+    for variant, results in variant_results:
+        for rank, result in enumerate(results, start=1):
+            uuid = result["uuid"]
+            candidate = fused.setdefault(
+                uuid,
+                {
+                    "rrf_score": 0.0,
+                    "best_rank": rank,
+                    "best_vector_score": result["vector_score"],
+                    "payload": result["payload"],
+                    "provenance": [],
+                },
+            )
+            candidate["rrf_score"] += 1.0 / (rrf_k + rank)
+            candidate["provenance"].append(
+                {
+                    "variant": variant.name,
+                    "query": variant.text,
+                    "rank": rank,
+                    "vector_score": result["vector_score"],
+                }
+            )
+            if rank < candidate["best_rank"] or (
+                rank == candidate["best_rank"]
+                and result["vector_score"] > candidate["best_vector_score"]
+            ):
+                candidate["best_rank"] = rank
+                candidate["best_vector_score"] = result["vector_score"]
+                candidate["payload"] = result["payload"]
+
+    sorted_items = sorted(
+        fused.items(),
+        key=lambda item: (
+            -item[1]["rrf_score"],
+            item[1]["best_rank"],
+            item[0],
+        ),
+    )
+    return [
+        {
+            "uuid": uuid,
+            "score": data["rrf_score"],
+            "payload": data["payload"],
+            "provenance": data["provenance"],
+        }
+        for uuid, data in sorted_items[:limit]
+    ]

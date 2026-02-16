@@ -76,10 +76,22 @@ async def test_vector_search_returns_results(
     vector_store: MagicMock,
     llm_client: MagicMock,
 ) -> None:
-    """vector_search returns formatted results with UUIDs."""
-    llm_client.embed.return_value = [0.1, 0.2, 0.3]
-    vector_store.search.return_value = [
-        VectorSearchResult(id="node-1", score=0.9, payload={"title": "The Matrix"})
+    """vector_search runs query variants and returns fused RRF-ranked seeds."""
+    llm_client.embed.side_effect = [[0.1], [0.2], [0.3]]
+    vector_store.search.side_effect = [
+        [
+            VectorSearchResult(
+                id="node-1", score=0.95, payload={"title": "The Matrix"}
+            ),
+            VectorSearchResult(id="node-2", score=0.90, payload={"title": "Neo"}),
+        ],
+        [
+            VectorSearchResult(id="node-2", score=0.99, payload={"title": "Neo"}),
+        ],
+        [
+            VectorSearchResult(id="node-2", score=0.93, payload={"title": "Neo"}),
+            VectorSearchResult(id="node-3", score=0.80, payload={"title": "Morpheus"}),
+        ],
     ]
 
     result = await retriever.retrieve(
@@ -88,15 +100,84 @@ async def test_vector_search_returns_results(
     )
 
     assert result.success is True
-    assert result.data == [
-        {"uuid": "node-1", "score": 0.9, "payload": {"title": "The Matrix"}}
+    assert [record["uuid"] for record in result.data] == [
+        "node-2",
+        "node-1",
+        "node-3",
     ]
-    llm_client.embed.assert_awaited_once_with("matrix")
-    vector_store.search.assert_awaited_once_with(
-        [0.1, 0.2, 0.3],
-        limit=3,
-        filter={"must": []},
+    assert "provenance" in result.data[0]
+    assert {item["variant"] for item in result.data[0]["provenance"]} == {
+        "original",
+        "entity_focused",
+        "hypothesis_style",
+    }
+    assert [call.args[0] for call in llm_client.embed.await_args_list] == [
+        "matrix",
+        "Entity-focused rewrite: matrix",
+        "Hypothesis-style rewrite: matrix",
+    ]
+    assert vector_store.search.await_count == 3
+    for call in vector_store.search.await_args_list:
+        assert call.kwargs["limit"] == 3
+        assert call.kwargs["filter"] == {"must": []}
+
+
+@pytest.mark.anyio
+async def test_vector_search_rrf_tie_breaks_by_uuid_for_determinism(
+    retriever: HybridRetriever,
+    vector_store: MagicMock,
+    llm_client: MagicMock,
+) -> None:
+    """Tied RRF scores are ordered by UUID to keep ranking deterministic."""
+    llm_client.embed.side_effect = [[0.1], [0.2], [0.3]]
+    vector_store.search.side_effect = [
+        [VectorSearchResult(id="node-b", score=0.8, payload={})],
+        [VectorSearchResult(id="node-a", score=0.9, payload={})],
+        [],
+    ]
+
+    result = await retriever.retrieve("tie", {"action": "vector_search", "limit": 2})
+
+    assert result.success is True
+    assert [record["uuid"] for record in result.data] == ["node-a", "node-b"]
+
+
+@pytest.mark.anyio
+async def test_vector_search_includes_query_variant_provenance(
+    retriever: HybridRetriever,
+    vector_store: MagicMock,
+    llm_client: MagicMock,
+) -> None:
+    """Each fused seed includes provenance with query-variant metadata."""
+    llm_client.embed.side_effect = [[0.1], [0.2], [0.3]]
+    vector_store.search.side_effect = [
+        [VectorSearchResult(id="node-1", score=0.9, payload={})],
+        [VectorSearchResult(id="node-1", score=0.8, payload={})],
+        [],
+    ]
+
+    result = await retriever.retrieve(
+        "graph retrieval",
+        {"action": "vector_search", "limit": 5},
     )
+
+    assert result.success is True
+    assert len(result.data) == 1
+    assert result.data[0]["uuid"] == "node-1"
+    assert result.data[0]["provenance"] == [
+        {
+            "variant": "original",
+            "query": "graph retrieval",
+            "rank": 1,
+            "vector_score": 0.9,
+        },
+        {
+            "variant": "entity_focused",
+            "query": "Entity-focused rewrite: graph retrieval",
+            "rank": 1,
+            "vector_score": 0.8,
+        },
+    ]
 
 
 @pytest.mark.anyio
