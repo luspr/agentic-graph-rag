@@ -9,7 +9,10 @@ from agentic_graph_rag.llm.base import LLMClient
 from agentic_graph_rag.retriever.base import RetrievalStrategy
 from agentic_graph_rag.retriever.hybrid_retriever import (
     HybridRetriever,
+    HybridScoreWeights,
+    _apply_max_branching,
     _build_expand_query,
+    blend_scores,
 )
 from agentic_graph_rag.vector.base import VectorSearchResult, VectorStore
 
@@ -205,7 +208,7 @@ async def test_expand_node_executes_cypher(
         records=[
             {
                 "start_uuid": "node-1",
-                "node_uuid": "node-2",
+                "end_uuid": "node-2",
                 "node_labels": ["Movie"],
                 "path_length": 1,
                 "path_nodes": [
@@ -234,7 +237,7 @@ async def test_expand_node_executes_cypher(
     assert result.success is True
     assert len(result.data) == 1
     assert result.data[0]["start_uuid"] == "node-1"
-    assert result.data[0]["node_uuid"] == "node-2"
+    assert result.data[0]["end_uuid"] == "node-2"
     assert result.data[0]["path_length"] == 1
 
     cypher, params = graph_db.execute.await_args[0]
@@ -316,10 +319,10 @@ def test_build_query_direction_in() -> None:
 
 
 def test_build_query_includes_path_return_fields() -> None:
-    """Query returns start_uuid, node_uuid, node_labels, path_length, path_nodes, path_rels."""
+    """Query returns start_uuid, end_uuid, node_labels, path_length, path_nodes, path_rels."""
     query = _build_expand_query("uuid", 1, None)
     assert "start_uuid" in query
-    assert "node_uuid" in query
+    assert "end_uuid" in query
     assert "node_labels" in query
     assert "path_length" in query
     assert "path_nodes" in query
@@ -369,7 +372,7 @@ def test_build_query_uses_custom_uuid_property() -> None:
     query = _build_expand_query("node_id", 1, None)
     assert "node_id: $uuid" in query
     assert "start.node_id AS start_uuid" in query
-    assert "end_node.node_id AS node_uuid" in query
+    assert "end_node.node_id AS end_uuid" in query
     assert "n.node_id" in query
     assert "startNode(rel).node_id" in query
     assert "endNode(rel).node_id" in query
@@ -500,7 +503,7 @@ async def test_expand_node_message_includes_path_count(
 ) -> None:
     """expand_node success message reports the number of paths."""
     graph_db.execute.return_value = QueryResult(
-        records=[{"start_uuid": "a", "node_uuid": "b"}] * 3,
+        records=[{"start_uuid": "a", "end_uuid": "b"}] * 3,
         summary={},
         error=None,
     )
@@ -511,3 +514,264 @@ async def test_expand_node_message_includes_path_count(
     )
 
     assert "3 paths" in result.message
+
+
+# --- _build_expand_query end_uuid rename tests ---
+
+
+def test_build_query_returns_end_uuid_field() -> None:
+    """Query returns end_uuid (not node_uuid) for the expanded node."""
+    query = _build_expand_query("uuid", 1, None)
+    assert "AS end_uuid" in query
+    assert "AS node_uuid" not in query
+
+
+# --- max_branching tests ---
+
+
+def _make_path_record(
+    start: str,
+    end: str,
+    path_nodes: list[dict[str, str]],
+    path_length: int = 1,
+) -> dict:
+    return {
+        "start_uuid": start,
+        "end_uuid": end,
+        "node_labels": ["Node"],
+        "path_length": path_length,
+        "path_nodes": [
+            {"uuid": n["uuid"], "labels": ["Node"], "name": None} for n in path_nodes
+        ],
+        "path_rels": [],
+    }
+
+
+def test_apply_max_branching_limits_children() -> None:
+    """Paths are filtered when a parent exceeds max_branching distinct children."""
+    records = [
+        _make_path_record("A", "B", [{"uuid": "A"}, {"uuid": "B"}]),
+        _make_path_record("A", "C", [{"uuid": "A"}, {"uuid": "C"}]),
+        _make_path_record("A", "D", [{"uuid": "A"}, {"uuid": "D"}]),
+    ]
+    result = _apply_max_branching(records, max_branching=2)
+    assert len(result) == 2
+    assert {r["end_uuid"] for r in result} == {"B", "C"}
+
+
+def test_apply_max_branching_none_keeps_all() -> None:
+    """None max_branching keeps all records unchanged."""
+    records = [
+        _make_path_record("A", "B", [{"uuid": "A"}, {"uuid": "B"}]),
+        _make_path_record("A", "C", [{"uuid": "A"}, {"uuid": "C"}]),
+        _make_path_record("A", "D", [{"uuid": "A"}, {"uuid": "D"}]),
+    ]
+    result = _apply_max_branching(records, max_branching=None)
+    assert len(result) == 3
+
+
+def test_apply_max_branching_preserves_order() -> None:
+    """Shortest paths are kept first when max_branching limits expansion."""
+    records = [
+        _make_path_record("A", "B", [{"uuid": "A"}, {"uuid": "B"}], path_length=1),
+        _make_path_record("A", "C", [{"uuid": "A"}, {"uuid": "C"}], path_length=2),
+        _make_path_record("A", "D", [{"uuid": "A"}, {"uuid": "D"}], path_length=3),
+    ]
+    result = _apply_max_branching(records, max_branching=2)
+    assert [r["path_length"] for r in result] == [1, 2]
+
+
+@pytest.mark.anyio
+async def test_expand_node_max_branching_filters_records(
+    retriever: HybridRetriever,
+    graph_db: MagicMock,
+) -> None:
+    """expand_node with max_branching filters paths after query execution."""
+    graph_db.execute.return_value = QueryResult(
+        records=[
+            _make_path_record("A", "B", [{"uuid": "A"}, {"uuid": "B"}]),
+            _make_path_record("A", "C", [{"uuid": "A"}, {"uuid": "C"}]),
+            _make_path_record("A", "D", [{"uuid": "A"}, {"uuid": "D"}]),
+        ],
+        summary={},
+        error=None,
+    )
+
+    result = await retriever.retrieve(
+        "A",
+        {"action": "expand_node", "node_id": "A", "max_branching": 2},
+    )
+
+    assert result.success is True
+    assert len(result.data) == 2
+
+
+@pytest.mark.anyio
+async def test_expand_node_step_records_max_branching(
+    retriever: HybridRetriever,
+    graph_db: MagicMock,
+) -> None:
+    """expand_node step input includes max_branching."""
+    graph_db.execute.return_value = QueryResult(records=[], summary={}, error=None)
+
+    result = await retriever.retrieve(
+        "n1",
+        {"action": "expand_node", "node_id": "n1", "max_branching": 3},
+    )
+
+    step = result.steps[0]
+    assert step.input["max_branching"] == 3
+
+
+@pytest.mark.anyio
+async def test_expand_node_max_branching_none_by_default(
+    retriever: HybridRetriever,
+    graph_db: MagicMock,
+) -> None:
+    """expand_node defaults max_branching to None when not specified."""
+    graph_db.execute.return_value = QueryResult(records=[], summary={}, error=None)
+
+    result = await retriever.retrieve(
+        "n1",
+        {"action": "expand_node", "node_id": "n1"},
+    )
+
+    step = result.steps[0]
+    assert step.input["max_branching"] is None
+
+
+# --- blend_scores tests ---
+
+
+def _make_candidate(uuid: str, score: float, payload: dict | None = None) -> dict:
+    return {
+        "uuid": uuid,
+        "score": score,
+        "payload": payload or {},
+        "provenance": [
+            {"variant": "original", "query": "q", "rank": 1, "vector_score": score}
+        ],
+    }
+
+
+def _make_graph_path(
+    end_uuid: str,
+    path_length: int = 1,
+    path_rels: list[dict] | None = None,
+    path_nodes: list[dict] | None = None,
+) -> dict:
+    return {
+        "start_uuid": "root",
+        "end_uuid": end_uuid,
+        "node_labels": ["Node"],
+        "path_length": path_length,
+        "path_nodes": path_nodes or [],
+        "path_rels": path_rels or [],
+    }
+
+
+def test_blend_scores_empty_candidates() -> None:
+    """Empty input returns empty list."""
+    assert blend_scores([]) == []
+
+
+def test_blend_scores_vector_only() -> None:
+    """Without graph paths, ranking follows vector score order."""
+    candidates = [
+        _make_candidate("A", 0.5),
+        _make_candidate("B", 0.9),
+        _make_candidate("C", 0.7),
+    ]
+    result = blend_scores(candidates, graph_paths=None)
+    assert [r["uuid"] for r in result] == ["B", "C", "A"]
+    for r in result:
+        assert "blended_score" in r
+        assert "score_components" in r
+        assert r["score_components"]["graph"] == 0.0
+
+
+def test_blend_scores_with_graph_paths() -> None:
+    """Graph paths influence ranking — shorter path boosts candidate."""
+    candidates = [
+        _make_candidate("A", 0.9),
+        _make_candidate("B", 0.8),
+    ]
+    graph_paths = [
+        _make_graph_path("B", path_length=1, path_rels=[{"type": "ACTED_IN"}]),
+    ]
+    result = blend_scores(candidates, graph_paths=graph_paths)
+    # B gets a graph boost; check that its graph component is non-zero
+    b_result = next(r for r in result if r["uuid"] == "B")
+    assert b_result["score_components"]["graph"] > 0.0
+    a_result = next(r for r in result if r["uuid"] == "A")
+    assert a_result["score_components"]["graph"] == 0.0
+
+
+def test_blend_scores_hub_penalty() -> None:
+    """Hub nodes appearing in many paths get penalized."""
+    candidates = [
+        _make_candidate("hub", 0.9),
+        _make_candidate("leaf", 0.85),
+    ]
+    graph_paths = [
+        _make_graph_path("hub", path_length=1, path_rels=[{"type": "R1"}]),
+        _make_graph_path("hub", path_length=2, path_rels=[{"type": "R2"}]),
+        _make_graph_path("hub", path_length=3, path_rels=[{"type": "R3"}]),
+        _make_graph_path("leaf", path_length=1, path_rels=[{"type": "R1"}]),
+    ]
+    result = blend_scores(candidates, graph_paths=graph_paths)
+    hub_result = next(r for r in result if r["uuid"] == "hub")
+    assert hub_result["score_components"]["hub_penalty"] > 0.0
+    leaf_result = next(r for r in result if r["uuid"] == "leaf")
+    assert leaf_result["score_components"]["hub_penalty"] == 0.0
+
+
+def test_blend_scores_novelty_bonus() -> None:
+    """Candidates with unique labels get a novelty bonus."""
+    candidates = [
+        _make_candidate("A", 0.9, payload={"labels": ["Movie"]}),
+        _make_candidate("B", 0.8, payload={"labels": ["Person"]}),
+    ]
+    result = blend_scores(candidates, graph_paths=None)
+    # First candidate processed gets novelty (all labels are new)
+    a_result = next(r for r in result if r["uuid"] == "A")
+    assert a_result["score_components"]["novelty"] > 0.0
+
+
+def test_blend_scores_deterministic() -> None:
+    """Same input always produces same output."""
+    candidates = [
+        _make_candidate("A", 0.5),
+        _make_candidate("B", 0.5),
+    ]
+    paths = [_make_graph_path("A", path_length=1, path_rels=[{"type": "R"}])]
+    result1 = blend_scores(candidates, graph_paths=paths)
+    result2 = blend_scores(candidates, graph_paths=paths)
+    assert [r["uuid"] for r in result1] == [r["uuid"] for r in result2]
+    assert [r["blended_score"] for r in result1] == [
+        r["blended_score"] for r in result2
+    ]
+
+
+def test_blend_scores_custom_weights() -> None:
+    """Custom HybridScoreWeights changes ranking outcome."""
+    candidates = [
+        _make_candidate("A", 0.9),
+        _make_candidate("B", 0.3),
+    ]
+    paths = [
+        _make_graph_path(
+            "B", path_length=1, path_rels=[{"type": "R1"}, {"type": "R2"}]
+        ),
+    ]
+    # Heavy graph weight should boost B despite lower vector score
+    heavy_graph = HybridScoreWeights(
+        vector_weight=0.1,
+        graph_weight=0.8,
+        novelty_weight=0.0,
+        relation_prior_weight=0.1,
+        hub_penalty_factor=0.0,
+        path_length_decay=0.2,
+    )
+    result = blend_scores(candidates, graph_paths=paths, weights=heavy_graph)
+    assert result[0]["uuid"] == "B"

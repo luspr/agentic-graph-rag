@@ -751,7 +751,7 @@ state: done
 
 ### Task 7.4: Return path-level evidence from graph expansion
 
-state: todo
+state: done
 
 **Context / Background:**
 - Current `expand_node` output is node-collapsed and loses path detail.
@@ -776,14 +776,14 @@ state: todo
 - `tests/test_agent/test_tools.py`
 
 **Acceptance Criteria:**
-- [ ] Expansion returns path-level records with ordered nodes/relationships.
-- [ ] Directionality is preserved in returned evidence.
-- [ ] Optional traversal controls are wired and tested.
-- [ ] Existing calls without new args remain valid.
+- [x] Expansion returns path-level records with ordered nodes/relationships.
+- [x] Directionality is preserved in returned evidence.
+- [x] Optional traversal controls are wired and tested.
+- [x] Existing calls without new args remain valid.
 
 ### Task 7.5: Add hybrid score blending for candidate ranking
 
-state: todo
+state: done
 
 **Context / Background:**
 - Current ranking is dominated by raw vector similarity.
@@ -802,9 +802,9 @@ state: todo
 - `tests/test_retriever/test_hybrid_retriever.py`
 
 **Acceptance Criteria:**
-- [ ] Ranking uses blended hybrid scores, not vector score alone.
-- [ ] Ranking output is deterministic for fixed input.
-- [ ] Unit tests cover scoring behavior and edge cases.
+- [x] Ranking uses blended hybrid scores, not vector score alone.
+- [x] Ranking output is deterministic for fixed input.
+- [x] Unit tests cover scoring behavior and edge cases.
 
 ### Task 7.6: Add compact hybrid-specific prompt/result formatting
 
