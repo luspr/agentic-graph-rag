@@ -118,6 +118,13 @@ class QdrantVectorStore(VectorStore):
             info = await self._client.get_collection(self._collection_name)
             vectors = self._extract_vectors_config(info)
             self._vector_name = self._resolve_vector_name(vectors, self._vector_name)
+            if isinstance(vectors, dict) and self._vector_name is None:
+                available = ", ".join(sorted(vectors))
+                raise ValueError(
+                    f"Collection '{self._collection_name}' uses named vectors "
+                    f"({available}) but QDRANT_VECTOR_NAME is not set. "
+                    "Set QDRANT_VECTOR_NAME in your .env file."
+                )
             self._collection_ready = True
             return
         except qdrant_exceptions.UnexpectedResponse as exc:

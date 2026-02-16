@@ -22,6 +22,7 @@ class OpenAILLMClient(LLMClient):
         api_key: str,
         model: str = "gpt-5.2",
         embedding_model: str | None = None,
+        embedding_dimensions: int | None = None,
     ) -> None:
         """Initialize OpenAI client.
 
@@ -29,10 +30,12 @@ class OpenAILLMClient(LLMClient):
             api_key: OpenAI API key.
             model: Model to use for completions (default: gpt-5.2).
             embedding_model: Model to use for embeddings (default: text-embedding-3-small).
+            embedding_dimensions: Optional dimensions to request from the embedding model.
         """
         self._client = AsyncOpenAI(api_key=api_key)
         self._model = model
         self._embedding_model = embedding_model or self.DEFAULT_EMBEDDING_MODEL
+        self._embedding_dimensions = embedding_dimensions
 
     async def aclose(self) -> None:
         """Close the underlying HTTP client."""
@@ -126,10 +129,16 @@ class OpenAILLMClient(LLMClient):
         Raises:
             OpenAIClientError: If the API request fails after retries.
         """
+        kwargs: dict[str, Any] = {
+            "model": self._embedding_model,
+            "input": text,
+        }
+        if self._embedding_dimensions is not None:
+            kwargs["dimensions"] = self._embedding_dimensions
+
         response = await self._request_with_retry(
             self._client.embeddings.create,
-            model=self._embedding_model,
-            input=text,
+            **kwargs,
         )
         return response.data[0].embedding
 

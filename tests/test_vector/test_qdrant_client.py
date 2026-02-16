@@ -199,3 +199,20 @@ async def test_embedding_size_mismatch_raises(settings: Settings) -> None:
         store = QdrantVectorStore(settings, "movies", vector_size=3)
         with pytest.raises(ValueError, match="Embedding size"):
             await store.search([0.1, 0.2], limit=1)
+
+
+@pytest.mark.anyio
+async def test_ensure_collection_raises_when_named_vector_unresolved(
+    settings: Settings,
+) -> None:
+    """_ensure_collection raises ValueError when named vectors exist but none is resolved."""
+    mock_client = MagicMock()
+    mock_client.get_collection = AsyncMock(return_value=_mock_named_collection_info())
+
+    # Simulate _resolve_vector_name returning None despite a dict of named vectors
+    # (unexpected edge case: guard fires as a safety net).
+    with patch(_PATCH_TARGET, return_value=mock_client):
+        store = QdrantVectorStore(settings, "movies", vector_size=3)
+        with patch.object(store, "_resolve_vector_name", return_value=None):
+            with pytest.raises(ValueError, match="QDRANT_VECTOR_NAME"):
+                await store.search([0.1, 0.2, 0.3], limit=1)

@@ -284,6 +284,32 @@ async def test_embed_uses_custom_model() -> None:
 
 
 @pytest.mark.anyio
+async def test_embed_uses_configured_dimensions() -> None:
+    """embed() sends dimensions when configured."""
+    mock_client = MagicMock()
+    mock_response = MagicMock()
+    mock_response.data = [MagicMock(embedding=[0.1, 0.2])]
+    mock_client.embeddings.create = AsyncMock(return_value=mock_response)
+
+    with patch(
+        "agentic_graph_rag.llm.openai_client.AsyncOpenAI", return_value=mock_client
+    ):
+        client = OpenAILLMClient(
+            api_key="test-key",
+            embedding_model="text-embedding-3-large",
+            embedding_dimensions=1024,
+        )
+
+    await client.embed("test")
+
+    mock_client.embeddings.create.assert_called_once_with(
+        model="text-embedding-3-large",
+        input="test",
+        dimensions=1024,
+    )
+
+
+@pytest.mark.anyio
 async def test_retry_on_rate_limit(
     client: OpenAILLMClient, mock_openai_client: MagicMock
 ) -> None:

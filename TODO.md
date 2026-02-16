@@ -1016,6 +1016,10 @@ state: todo
   - high-value retrieval evidence needed for answer faithfulness.
 - Add config knobs for compaction thresholds and retained recent-turn window.
 
+**Dependency Note:**
+- `blocked_by`: `Task 7.2` (new configuration knobs are required for thresholds/budgets).
+- `parallel_with`: `Task 7.6` (formatting work can proceed independently; integration happens here).
+
 **Files:**
 - `src/agentic_graph_rag/agent/controller.py`
 - `src/agentic_graph_rag/agent/session.py`
