@@ -645,7 +645,8 @@ carries `provenance` metadata indicating which variants retrieved it and at what
 ### 2. Graph Expansion (`expand_node`) (Tasks 6.1, 7.4)
 
 Starting from seed UUIDs, the LLM calls `expand_node` to traverse the knowledge graph.
-The Cypher query returns **one record per path** (not per node), preserving full structure:
+The Cypher query returns **multiple records — one per traversal path** rather than
+deduplicating per end-node. This preserves the full graph structure of each path:
 
 | Field         | Description                                           |
 |---------------|-------------------------------------------------------|
