@@ -623,6 +623,79 @@ agentic-graph-rag/
 
 ---
 
+## Hybrid Retrieval Pipeline
+
+The hybrid retriever combines vector similarity with graph structure for richer evidence.
+Below is an overview of the pipeline stages and the signals each stage produces.
+
+### 1. Multi-Query Vector Seeding (Task 7.3)
+
+A single user query is expanded into three **query variants**:
+
+| Variant            | Purpose                                     |
+|--------------------|---------------------------------------------|
+| `original`         | The raw user query                          |
+| `entity_focused`   | Rewrite that emphasizes named entities      |
+| `hypothesis_style` | Rewrite that frames the query as a claim    |
+
+Each variant is embedded and searched independently against Qdrant. Results are fused
+using **Reciprocal Rank Fusion (RRF)** to produce a single ranked seed list. Every seed
+carries `provenance` metadata indicating which variants retrieved it and at what rank.
+
+### 2. Graph Expansion (`expand_node`) (Tasks 6.1, 7.4)
+
+Starting from seed UUIDs, the LLM calls `expand_node` to traverse the knowledge graph.
+The Cypher query returns **one record per path** (not per node), preserving full structure:
+
+| Field         | Description                                           |
+|---------------|-------------------------------------------------------|
+| `start_uuid`  | UUID of the seed node                                 |
+| `end_uuid`    | UUID of the terminal node on this path                |
+| `path_length` | Number of hops                                        |
+| `path_nodes`  | Ordered list of `{uuid, labels, name}` along the path |
+| `path_rels`   | Ordered list of `{type, from_uuid, to_uuid}`          |
+
+Paths are sorted shortest-first and capped by `max_paths` (default 20).
+
+**Traversal controls** available to the LLM:
+
+| Parameter           | Default | Description                                       |
+|---------------------|---------|---------------------------------------------------|
+| `direction`         | `both`  | `out`, `in`, or `both`                            |
+| `depth`             | `1`     | Max hops from start node                          |
+| `max_paths`         | `20`    | Hard cap on returned paths (Cypher LIMIT)         |
+| `max_branching`     | `None`  | Max distinct children per parent (post-filter)    |
+| `relationship_types`| `None`  | Restrict to specific relationship types           |
+
+`max_branching` is applied as a **post-processing filter**: paths are processed in order
+(shortest first), and a path is dropped if adding it would cause any parent node to exceed
+the branching limit. This prevents hub nodes from dominating expansion results.
+
+### 3. Hybrid Score Blending (Task 7.5)
+
+After vector seeding and graph expansion, candidates can be re-ranked using `blend_scores()`,
+which combines multiple signals into a single score:
+
+```
+blended_score = vector + graph + relation_prior + novelty - hub_penalty
+```
+
+| Component          | Weight (default) | Signal                                           |
+|--------------------|------------------|--------------------------------------------------|
+| `vector`           | 0.40             | Normalized RRF score from vector seeding         |
+| `graph`            | 0.30             | Path quality: `1 / (1 + decay * min_path_length)`|
+| `relation_prior`   | 0.15             | Diversity of relationship types in paths         |
+| `novelty`          | 0.15             | Fraction of unique labels not yet seen           |
+| `hub_penalty`      | 0.10 (max)       | Penalizes nodes appearing in many paths          |
+
+Weights are configurable via `HybridScoreWeights` (frozen dataclass). The function is
+deterministic for fixed inputs and tie-breaks by UUID.
+
+`blend_scores()` is currently a standalone utility — it is not auto-invoked during
+retrieval. Future tasks (7.6, 7.8) will integrate it into the agentic loop.
+
+---
+
 ## Flow: Agent Iteration Loop
 
 ```
