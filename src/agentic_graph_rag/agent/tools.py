@@ -92,6 +92,12 @@ AGENT_TOOLS: list[ToolDefinition] = [
                     "description": "Maximum number of paths to return",
                     "default": 20,
                 },
+                "max_branching": {
+                    "type": "integer",
+                    "description": (
+                        "Max distinct neighbor nodes to explore from any single node"
+                    ),
+                },
             },
             "required": ["node_id"],
         },
@@ -209,6 +215,7 @@ class ToolRouter:
             "depth": args.get("depth", 1),
             "direction": args.get("direction", "both"),
             "max_paths": args.get("max_paths", 20),
+            "max_branching": args.get("max_branching"),
         }
         result = await self._hybrid_retriever.retrieve(node_id, context)
         return {

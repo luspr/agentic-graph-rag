@@ -178,6 +178,12 @@ class HybridRetriever(Retriever):
         if direction not in _VALID_DIRECTIONS:
             direction = "both"
         max_paths = _coerce_positive_int(context.get("max_paths"), default=20)
+        raw_branching = context.get("max_branching")
+        max_branching: int | None = (
+            _coerce_positive_int(raw_branching, default=0) or None
+            if raw_branching is not None
+            else None
+        )
 
         step = RetrievalStep(
             action="expand_node",
@@ -187,6 +193,7 @@ class HybridRetriever(Retriever):
                 "depth": depth,
                 "direction": direction,
                 "max_paths": max_paths,
+                "max_branching": max_branching,
             },
             output={},
             error=None,
@@ -225,12 +232,14 @@ class HybridRetriever(Retriever):
                 message=f"Graph expansion failed: {result.error}",
             )
 
-        step.output = {"records": result.records, "summary": result.summary}
+        records = _apply_max_branching(result.records, max_branching)
+
+        step.output = {"records": records, "summary": result.summary}
         return RetrievalResult(
-            data=result.records,
+            data=records,
             steps=[step],
             success=True,
-            message=f"Expanded {len(result.records)} paths from node",
+            message=f"Expanded {len(records)} paths from node",
         )
 
 
@@ -252,7 +261,7 @@ def _build_expand_query(
 ) -> str:
     """Build a Cypher query that returns one record per path.
 
-    Returns path-level records with start_uuid, node_uuid, node_labels,
+    Returns path-level records with start_uuid, end_uuid, node_labels,
     path_length, ordered path_nodes, and ordered path_rels with direction.
     """
     rel_pattern = _DIRECTION_PATTERNS.get(
@@ -274,7 +283,7 @@ def _build_expand_query(
         f" ORDER BY path_length"
         f" LIMIT $max_paths"
         f" RETURN start.{uuid_property} AS start_uuid,"
-        f" end_node.{uuid_property} AS node_uuid,"
+        f" end_node.{uuid_property} AS end_uuid,"
         f" labels(end_node) AS node_labels,"
         f" path_length,"
         f" [n IN nodes(p) | {{uuid: n.{uuid_property},"
@@ -284,6 +293,53 @@ def _build_expand_query(
         f" from_uuid: startNode(rel).{uuid_property},"
         f" to_uuid: endNode(rel).{uuid_property}}}] AS path_rels"
     )
+
+
+def _apply_max_branching(
+    records: list[dict[str, Any]],
+    max_branching: int | None,
+) -> list[dict[str, Any]]:
+    """Filter paths so no parent node exceeds *max_branching* distinct children.
+
+    Processes paths in order (assumed shortest-first from Cypher ORDER BY).
+    Tracks ``parent_uuid → {child_uuid}`` across all kept paths and drops any
+    path where a parent would exceed the limit.
+
+    Returns *records* unchanged when *max_branching* is ``None``.
+    """
+    if max_branching is None:
+        return records
+
+    parent_children: dict[str, set[str]] = {}
+    kept: list[dict[str, Any]] = []
+
+    for record in records:
+        path_nodes: list[dict[str, Any]] = record.get("path_nodes", [])
+        if len(path_nodes) < 2:
+            kept.append(record)
+            continue
+
+        # Check every consecutive (parent, child) edge in the path
+        exceeds = False
+        edges: list[tuple[str, str]] = []
+        for i in range(len(path_nodes) - 1):
+            parent_uuid = path_nodes[i].get("uuid", "")
+            child_uuid = path_nodes[i + 1].get("uuid", "")
+            existing = parent_children.get(parent_uuid, set())
+            if child_uuid not in existing and len(existing) >= max_branching:
+                exceeds = True
+                break
+            edges.append((parent_uuid, child_uuid))
+
+        if exceeds:
+            continue
+
+        # Commit edges
+        for parent_uuid, child_uuid in edges:
+            parent_children.setdefault(parent_uuid, set()).add(child_uuid)
+        kept.append(record)
+
+    return kept
 
 
 def _coerce_positive_int(value: Any, default: int) -> int:
