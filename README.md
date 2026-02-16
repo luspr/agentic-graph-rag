@@ -57,4 +57,4 @@ Set env vars (or `.env`) for the required services:
 - `OPENAI_API_KEY`, `OPENAI_MODEL`, optional `OPENAI_JUDGE_MODEL`
 - `OPENAI_EMBEDDING_MODEL` (default: `text-embedding-3-small`)
 - `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD`
-- `QDRANT_HOST`, `QDRANT_PORT`, `QDRANT_COLLECTION`, `EMBEDDING_DIM`
+- `QDRANT_HOST`, `QDRANT_PORT`, `QDRANT_COLLECTION`, `EMBEDDING_DIM` (used for OpenAI embedding dimensions and Qdrant vector size)

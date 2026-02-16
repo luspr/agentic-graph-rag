@@ -42,6 +42,7 @@ async def main() -> int:
         api_key=settings.openai_api_key,
         model=settings.openai_model,
         embedding_model=settings.openai_embedding_model,
+        embedding_dimensions=settings.embedding_dim,
     )
 
     async with Neo4jClient(settings) as graph_db:

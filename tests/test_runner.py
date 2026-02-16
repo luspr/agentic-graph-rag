@@ -153,3 +153,4 @@ async def test_headless_runner_passes_embedding_model_to_llm(
         pass
 
     assert captured["embedding_model"] == "text-embedding-3-large"
+    assert captured["embedding_dimensions"] == dummy_settings.embedding_dim

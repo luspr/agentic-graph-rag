@@ -70,6 +70,7 @@ class HeadlessRunner:
             api_key=self._settings.openai_api_key,
             model=self._settings.openai_model,
             embedding_model=self._settings.openai_embedding_model,
+            embedding_dimensions=self._settings.embedding_dim,
         )
         self._graph_db = Neo4jClient(self._settings)
         await self._graph_db.__aenter__()
