@@ -27,6 +27,7 @@ def test_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("NEO4J_PASSWORD", "secret")
     for var in (
         "OPENAI_MODEL",
+        "OPENAI_EMBEDDING_MODEL",
         "QDRANT_HOST",
         "QDRANT_PORT",
         "QDRANT_COLLECTION",
@@ -41,6 +42,7 @@ def test_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = Settings(_env_file=None)
 
     assert settings.openai_model == "gpt-5.2"
+    assert settings.openai_embedding_model == "text-embedding-3-small"
     assert settings.qdrant_host == "localhost"
     assert settings.qdrant_port == 6333
     assert settings.qdrant_collection == "graph_nodes"
@@ -55,6 +57,7 @@ def test_settings_overrides_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     """Environment variables override default values."""
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
     monkeypatch.setenv("OPENAI_MODEL", "gpt-4o")
+    monkeypatch.setenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-large")
     monkeypatch.setenv("NEO4J_URI", "bolt://localhost:7687")
     monkeypatch.setenv("NEO4J_USER", "neo4j")
     monkeypatch.setenv("NEO4J_PASSWORD", "secret")
@@ -70,6 +73,7 @@ def test_settings_overrides_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = Settings(_env_file=None)
 
     assert settings.openai_model == "gpt-4o"
+    assert settings.openai_embedding_model == "text-embedding-3-large"
     assert settings.qdrant_host == "qdrant.example.com"
     assert settings.qdrant_port == 6334
     assert settings.qdrant_collection == "custom_collection"

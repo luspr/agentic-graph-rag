@@ -118,3 +118,38 @@ async def test_headless_runner_hybrid_initializes_vector(
 
     assert created["vector_kwargs"]["vector_size"] == dummy_settings.embedding_dim
     assert created.get("hybrid") is True
+
+
+@pytest.mark.anyio
+async def test_headless_runner_passes_embedding_model_to_llm(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from agentic_graph_rag.config import Settings
+
+    dummy_settings = Settings(
+        openai_api_key="key",
+        openai_model="model",
+        openai_embedding_model="text-embedding-3-large",
+        neo4j_uri="bolt://localhost:7687",
+        neo4j_user="neo4j",
+        neo4j_password="pass",
+    )
+
+    captured: dict[str, Any] = {}
+
+    class _CapturingLLM:
+        def __init__(self, *_: Any, **kwargs: Any) -> None:
+            captured.update(kwargs)
+
+        async def aclose(self) -> None:
+            return None
+
+    monkeypatch.setattr("agentic_graph_rag.runner.OpenAILLMClient", _CapturingLLM)
+    monkeypatch.setattr("agentic_graph_rag.runner.Neo4jClient", _DummyGraph)
+
+    async with HeadlessRunner(
+        settings=dummy_settings, strategy=RetrievalStrategy.CYPHER
+    ):
+        pass
+
+    assert captured["embedding_model"] == "text-embedding-3-large"

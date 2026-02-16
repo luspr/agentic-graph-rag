@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     # OpenAI
     openai_api_key: str
     openai_model: str = "gpt-5.2"
+    openai_embedding_model: str = "text-embedding-3-small"
     openai_judge_model: str | None = None
 
     # Neo4j

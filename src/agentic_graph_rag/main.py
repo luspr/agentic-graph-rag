@@ -41,6 +41,7 @@ async def main() -> int:
     llm_client = OpenAILLMClient(
         api_key=settings.openai_api_key,
         model=settings.openai_model,
+        embedding_model=settings.openai_embedding_model,
     )
 
     async with Neo4jClient(settings) as graph_db:

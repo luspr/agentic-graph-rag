@@ -11,6 +11,7 @@ from agentic_graph_rag.graph.base import GraphSchema, NodeType, RelationshipType
 class _DummySettings:
     openai_api_key = "key"
     openai_model = "model"
+    openai_embedding_model = "text-embedding-3-small"
     neo4j_uri = "bolt://localhost:7687"
     neo4j_user = "neo4j"
     neo4j_password = "pass"
