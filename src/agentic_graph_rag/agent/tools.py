@@ -61,7 +61,8 @@ AGENT_TOOLS: list[ToolDefinition] = [
         name="expand_node",
         description=(
             "Expand from a node to find connected nodes and relationships using the "
-            "node's UUID property."
+            "node's UUID property. Returns one record per path with ordered "
+            "path_nodes and path_rels preserving direction."
         ),
         parameters={
             "type": "object",
@@ -73,12 +74,23 @@ AGENT_TOOLS: list[ToolDefinition] = [
                 "relationship_types": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": ("Filter to specific relationship types (optional)"),
+                    "description": "Filter to specific relationship types (optional)",
                 },
                 "depth": {
                     "type": "integer",
                     "description": "How many hops to traverse",
                     "default": 1,
+                },
+                "direction": {
+                    "type": "string",
+                    "enum": ["out", "in", "both"],
+                    "description": "Traversal direction from the start node",
+                    "default": "both",
+                },
+                "max_paths": {
+                    "type": "integer",
+                    "description": "Maximum number of paths to return",
+                    "default": 20,
                 },
             },
             "required": ["node_id"],
@@ -195,6 +207,8 @@ class ToolRouter:
             "node_id": node_id,
             "relationship_types": args.get("relationship_types"),
             "depth": args.get("depth", 1),
+            "direction": args.get("direction", "both"),
+            "max_paths": args.get("max_paths", 20),
         }
         result = await self._hybrid_retriever.retrieve(node_id, context)
         return {

@@ -5,7 +5,13 @@ Each task includes a description, files to create/modify, and acceptance criteri
 
 See `ARCHITECTURE.md` for the full architecture design and interface definitions.
 
-For each task, create a new feature branch (branching from default master), commit intermediate steps, push, and create a PR on github. Default branch is master. PR to that.
+when you start working on a task, create a new feature branch (branching from default master) commit intermediate steps, push, and once you're finished (tests pass! pre-commit successful), create a PR on github. Default branch is master. PR to that.
+
+## Verification Checklist
+
+After completing all tasks, verify:
+
+**Unit tests:** `uv run pytest` - all pass
 
 ---
 
@@ -415,25 +421,6 @@ state: done
 - [ ] Idempotent - can be re-run without duplicating data
 - [ ] `uv run python scripts/load_movies_dataset.py` works end-to-end
 
----
-
-### Task 5.2: Write unit tests
-
-**Description:** Create comprehensive unit tests for all components with mocked dependencies.
-
-**Files:** `tests/` directory
-
-**Acceptance Criteria:**
-- [ ] `tests/conftest.py` with shared fixtures (mock LLM, mock GraphDB, mock VectorStore)
-- [ ] `tests/test_llm/test_openai_client.py` - tests for OpenAI client
-- [ ] `tests/test_graph/test_neo4j_client.py` - tests for Neo4j client
-- [ ] `tests/test_vector/test_qdrant_client.py` - tests for Qdrant client
-- [ ] `tests/test_retriever/test_cypher_retriever.py` - tests for Cypher retriever
-- [ ] `tests/test_retriever/test_hybrid_retriever.py` - tests for Hybrid retriever
-- [ ] `tests/test_agent/test_controller.py` - tests for agent controller
-- [ ] `tests/test_agent/test_tracer.py` - tests for tracer
-- [ ] `tests/test_agent/test_session.py` - tests for session manager
-- [ ] All tests pass: `uv run pytest`
 
 ---
 
@@ -452,18 +439,7 @@ state: done
 - [ ] Verify session memory persists across queries
 - [ ] All integration tests pass: `uv run pytest tests/test_integration.py`
 
----
 
-## Verification Checklist
-
-After completing all tasks, verify:
-
-4. **Unit tests:** `uv run pytest` - all pass
-5. **Integration test:**
-   - Start services: `docker compose up -d`
-   - Load data: `uv run python scripts/load_movies_dataset.py`
-   - Run app: `uv run python -m agentic_graph_rag.main`
-   - Test queries work end-to-end
 
 ---
 
@@ -471,7 +447,7 @@ After completing all tasks, verify:
 
 ### Task 6.1: Enrich HybridRetriever expand_node output
 
-state: todo
+state: done
 
 **Description:** Improve the hybrid expand query to preserve more graph structure and context for the LLM.
 
@@ -557,11 +533,11 @@ Below is a detailed explanation with code references and a comparison to the Cyp
 - `tests/test_agent/test_tools.py` (if output schema changes)
 
 **Acceptance Criteria:**
-- [ ] `expand_node` returns one record per path with `start_uuid`, `node_uuid`, and `path_length`.
-- [ ] Directionality is preserved (directed pattern or explicit direction metadata).
-- [ ] Returned data includes ordered `path_nodes` and `path_rels` (or equivalent).
-- [ ] If `max_paths` / `direction` are added, they are wired into tool args and tested.
-- [ ] Unit tests validate path ordering, direction, and length.
+- [x] `expand_node` returns one record per path with `start_uuid`, `node_uuid`, and `path_length`.
+- [x] Directionality is preserved (directed pattern or explicit direction metadata).
+- [x] Returned data includes ordered `path_nodes` and `path_rels` (or equivalent).
+- [x] If `max_paths` / `direction` are added, they are wired into tool args and tested.
+- [x] Unit tests validate path ordering, direction, and length.
 
 ### Task 6.2: Add Qdrant ingestion/indexing pipeline
 
@@ -1039,6 +1015,10 @@ state: todo
   - recent turns,
   - high-value retrieval evidence needed for answer faithfulness.
 - Add config knobs for compaction thresholds and retained recent-turn window.
+
+**Dependency Note:**
+- `blocked_by`: `Task 7.2` (new configuration knobs are required for thresholds/budgets).
+- `parallel_with`: `Task 7.6` (formatting work can proceed independently; integration happens here).
 
 **Files:**
 - `src/agentic_graph_rag/agent/controller.py`

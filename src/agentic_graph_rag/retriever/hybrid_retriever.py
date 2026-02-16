@@ -134,6 +134,10 @@ class HybridRetriever(Retriever):
         node_uuid = context.get("node_id") or query
         relationship_types = context.get("relationship_types")
         depth = _coerce_positive_int(context.get("depth"), default=1)
+        direction = context.get("direction", "both")
+        if direction not in _VALID_DIRECTIONS:
+            direction = "both"
+        max_paths = _coerce_positive_int(context.get("max_paths"), default=20)
 
         step = RetrievalStep(
             action="expand_node",
@@ -141,6 +145,8 @@ class HybridRetriever(Retriever):
                 "node_id": node_uuid,
                 "relationship_types": relationship_types,
                 "depth": depth,
+                "direction": direction,
+                "max_paths": max_paths,
             },
             output={},
             error=None,
@@ -155,10 +161,17 @@ class HybridRetriever(Retriever):
                 message="Missing node UUID for expansion.",
             )
 
-        cypher = _build_expand_query(self._uuid_property, depth, relationship_types)
-        params = {
+        cypher = _build_expand_query(
+            self._uuid_property,
+            depth,
+            relationship_types,
+            direction,
+            max_paths,
+        )
+        params: dict[str, Any] = {
             "uuid": node_uuid,
             "relationship_types": relationship_types,
+            "max_paths": max_paths,
         }
         result = await self._graph_db.execute(cypher, params)
 
@@ -177,28 +190,59 @@ class HybridRetriever(Retriever):
             data=result.records,
             steps=[step],
             success=True,
-            message=f"Retrieved {len(result.records)} records",
+            message=f"Expanded {len(result.records)} paths from node",
         )
+
+
+_VALID_DIRECTIONS = {"out", "in", "both"}
+
+_DIRECTION_PATTERNS: dict[str, str] = {
+    "out": "-[*1..{depth}]->",
+    "in": "<-[*1..{depth}]-",
+    "both": "-[*1..{depth}]-",
+}
 
 
 def _build_expand_query(
     uuid_property: str,
     depth: int,
     relationship_types: list[str] | None,
+    direction: str = "both",
+    max_paths: int = 20,
 ) -> str:
+    """Build a Cypher query that returns one record per path.
+
+    Returns path-level records with start_uuid, node_uuid, node_labels,
+    path_length, ordered path_nodes, and ordered path_rels with direction.
+    """
+    rel_pattern = _DIRECTION_PATTERNS.get(
+        direction, _DIRECTION_PATTERNS["both"]
+    ).format(
+        depth=depth,
+    )
     match_clause = (
-        f"MATCH (start {{{uuid_property}: $uuid}})"
-        f" MATCH (start)-[rels*1..{depth}]-(node)"
+        f"MATCH p = (start {{{uuid_property}: $uuid}}){rel_pattern}(end_node)"
     )
     where_clause = ""
     if relationship_types:
-        where_clause = " WHERE ALL(rel IN rels WHERE type(rel) IN $relationship_types)"
+        where_clause = (
+            " WHERE ALL(rel IN relationships(p) WHERE type(rel) IN $relationship_types)"
+        )
     return (
-        f"{match_clause}{where_clause} "
-        f"RETURN DISTINCT node, "
-        f"node.{uuid_property} AS node_uuid, "
-        "labels(node) AS node_labels, "
-        "[rel IN rels | type(rel)] AS relationship_types"
+        f"{match_clause}{where_clause}"
+        f" WITH p, start, end_node, length(p) AS path_length"
+        f" ORDER BY path_length"
+        f" LIMIT $max_paths"
+        f" RETURN start.{uuid_property} AS start_uuid,"
+        f" end_node.{uuid_property} AS node_uuid,"
+        f" labels(end_node) AS node_labels,"
+        f" path_length,"
+        f" [n IN nodes(p) | {{uuid: n.{uuid_property},"
+        f" labels: labels(n),"
+        f" name: coalesce(n.name, n.title, null)}}] AS path_nodes,"
+        f" [rel IN relationships(p) | {{type: type(rel),"
+        f" from_uuid: startNode(rel).{uuid_property},"
+        f" to_uuid: endNode(rel).{uuid_property}}}] AS path_rels"
     )
 
 
