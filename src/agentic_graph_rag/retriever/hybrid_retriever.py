@@ -70,6 +70,10 @@ class HybridRetriever(Retriever):
             return await self._vector_search(query, context or {})
         if action == "expand_node":
             return await self._expand_node(query, context or {})
+        if action == "shortest_path":
+            return await self._shortest_path(query, context or {})
+        if action == "pagerank":
+            return await self._pagerank(query, context or {})
 
         step = RetrievalStep(
             action="unknown_action",
@@ -242,6 +246,150 @@ class HybridRetriever(Retriever):
             message=f"Expanded {len(records)} paths from node",
         )
 
+    async def _shortest_path(
+        self, query: str, context: dict[str, Any]
+    ) -> RetrievalResult:
+        """Find shortest path(s) between two nodes."""
+        source_id = context.get("source_id", "")
+        target_id = context.get("target_id", "")
+        relationship_types = context.get("relationship_types")
+        max_length = _coerce_positive_int(context.get("max_length"), default=10)
+        all_shortest = bool(context.get("all_shortest", False))
+
+        step = RetrievalStep(
+            action="shortest_path",
+            input={
+                "source_id": source_id,
+                "target_id": target_id,
+                "relationship_types": relationship_types,
+                "max_length": max_length,
+                "all_shortest": all_shortest,
+            },
+            output={},
+            error=None,
+        )
+
+        if not source_id or not target_id:
+            step.error = "Both source_id and target_id are required."
+            return RetrievalResult(
+                data=[],
+                steps=[step],
+                success=False,
+                message="Missing source_id or target_id for shortest path.",
+            )
+
+        cypher = _build_shortest_path_query(
+            self._uuid_property,
+            relationship_types,
+            max_length,
+            all_shortest,
+        )
+        params: dict[str, Any] = {
+            "source_uuid": source_id,
+            "target_uuid": target_id,
+        }
+        result = await self._graph_db.execute(cypher, params)
+
+        if result.error:
+            step.error = result.error
+            step.output = {"records": [], "summary": result.summary}
+            return RetrievalResult(
+                data=[],
+                steps=[step],
+                success=False,
+                message=f"Shortest path query failed: {result.error}",
+            )
+
+        step.output = {"records": result.records, "summary": result.summary}
+        return RetrievalResult(
+            data=result.records,
+            steps=[step],
+            success=True,
+            message=f"Found {len(result.records)} shortest path(s)",
+        )
+
+    async def _pagerank(self, query: str, context: dict[str, Any]) -> RetrievalResult:
+        """Run Personalized PageRank from seed nodes."""
+        source_ids: list[str] = context.get("source_ids", [])
+        damping = context.get("damping", 0.85)
+        limit = _coerce_positive_int(context.get("limit"), default=20)
+        max_depth = _coerce_positive_int(context.get("max_depth"), default=3)
+        relationship_types = context.get("relationship_types")
+
+        step = RetrievalStep(
+            action="pagerank",
+            input={
+                "source_ids": source_ids,
+                "damping": damping,
+                "limit": limit,
+                "max_depth": max_depth,
+                "relationship_types": relationship_types,
+            },
+            output={},
+            error=None,
+        )
+
+        if not source_ids:
+            step.error = "source_ids list is required and must not be empty."
+            return RetrievalResult(
+                data=[],
+                steps=[step],
+                success=False,
+                message="Missing source_ids for PageRank.",
+            )
+
+        backend = "cypher_fallback"
+        records: list[dict[str, Any]] = []
+
+        if await self._graph_db.has_gds():
+            cypher = _build_ppr_gds_query(self._uuid_property, relationship_types)
+            params: dict[str, Any] = {
+                "source_uuids": source_ids,
+                "damping": damping,
+                "limit": limit,
+            }
+            result = await self._graph_db.execute(cypher, params)
+            if not result.error:
+                backend = "gds"
+                records = result.records
+
+        if not records and backend != "gds":
+            cypher = _build_ppr_cypher_fallback(
+                self._uuid_property, max_depth, relationship_types
+            )
+            params = {
+                "source_uuids": source_ids,
+                "damping": damping,
+                "limit": limit,
+            }
+            result = await self._graph_db.execute(cypher, params)
+            if result.error:
+                step.error = result.error
+                step.output = {
+                    "records": [],
+                    "summary": result.summary,
+                    "backend": backend,
+                }
+                return RetrievalResult(
+                    data=[],
+                    steps=[step],
+                    success=False,
+                    message=f"PageRank query failed: {result.error}",
+                )
+            records = result.records
+
+        step.output = {
+            "records": records,
+            "summary": {},
+            "backend": backend,
+        }
+        return RetrievalResult(
+            data=records,
+            steps=[step],
+            success=True,
+            message=(f"PageRank returned {len(records)} nodes (backend: {backend})"),
+        )
+
 
 _VALID_DIRECTIONS = {"out", "in", "both"}
 
@@ -292,6 +440,102 @@ def _build_expand_query(
         f" [rel IN relationships(p) | {{type: type(rel),"
         f" from_uuid: startNode(rel).{uuid_property},"
         f" to_uuid: endNode(rel).{uuid_property}}}] AS path_rels"
+    )
+
+
+def _build_shortest_path_query(
+    uuid_property: str,
+    relationship_types: list[str] | None,
+    max_length: int,
+    all_shortest: bool,
+) -> str:
+    """Build a Cypher shortest-path query between two nodes.
+
+    Uses built-in shortestPath() or allShortestPaths() — no GDS required.
+    """
+    func = "allShortestPaths" if all_shortest else "shortestPath"
+    rel_filter = ""
+    if relationship_types:
+        rel_filter = ":" + "|".join(relationship_types)
+    return (
+        f"MATCH (src {{{uuid_property}: $source_uuid}}),"
+        f" (tgt {{{uuid_property}: $target_uuid}})"
+        f" MATCH p = {func}((src)-[{rel_filter}*..{max_length}]-(tgt))"
+        f" RETURN src.{uuid_property} AS start_uuid,"
+        f" tgt.{uuid_property} AS end_uuid,"
+        f" length(p) AS path_length,"
+        f" [n IN nodes(p) | {{uuid: n.{uuid_property},"
+        f" labels: labels(n),"
+        f" name: coalesce(n.name, n.title, null)}}] AS path_nodes,"
+        f" [rel IN relationships(p) | {{type: type(rel),"
+        f" from_uuid: startNode(rel).{uuid_property},"
+        f" to_uuid: endNode(rel).{uuid_property}}}] AS path_rels"
+    )
+
+
+def _build_ppr_gds_query(
+    uuid_property: str,
+    relationship_types: list[str] | None,
+) -> str:
+    """Build a GDS Personalized PageRank query using anonymous graph projection."""
+    node_proj = "'*'"
+    if relationship_types:
+        rel_proj = (
+            "{"
+            + ", ".join(f"{rt}: {{type: '{rt}'}}" for rt in relationship_types)
+            + "}"
+        )
+    else:
+        rel_proj = "'*'"
+    return (
+        f"MATCH (seed) WHERE seed.{uuid_property} IN $source_uuids"
+        f" WITH collect(seed) AS seeds"
+        f" CALL gds.pageRank.stream({node_proj}, {rel_proj},"
+        f" {{sourceNodes: seeds, dampingFactor: $damping}})"
+        f" YIELD nodeId, score"
+        f" WITH gds.util.asNode(nodeId) AS n, score"
+        f" RETURN n.{uuid_property} AS uuid,"
+        f" labels(n) AS labels,"
+        f" coalesce(n.name, n.title, null) AS name,"
+        f" score AS ppr_score"
+        f" ORDER BY ppr_score DESC LIMIT $limit"
+    )
+
+
+def _build_ppr_cypher_fallback(
+    uuid_property: str,
+    max_depth: int,
+    relationship_types: list[str] | None,
+) -> str:
+    """Build a Cypher heuristic for Personalized PageRank using path counting.
+
+    Scores each reachable node as SUM(damping^distance) normalized by seed count.
+    """
+    rel_filter = ""
+    if relationship_types:
+        rel_filter = ":" + "|".join(relationship_types)
+    return (
+        f"MATCH (seed) WHERE seed.{uuid_property} IN $source_uuids"
+        f" WITH collect(seed) AS seeds, count(seed) AS seed_count"
+        f" UNWIND seeds AS s"
+        f" MATCH p = (s)-[{rel_filter}*1..{max_depth}]-(target)"
+        f" WHERE target <> s"
+        f" WITH target, seed_count,"
+        f" length(p) AS dist,"
+        f" count(p) AS path_count,"
+        f" $damping AS damping"
+        f" WITH target, seed_count,"
+        f" sum(reduce(acc = 1.0, _ IN range(1, dist) |"
+        f" acc * damping) * path_count) AS raw_score,"
+        f" min(dist) AS min_distance,"
+        f" sum(path_count) AS total_paths"
+        f" RETURN target.{uuid_property} AS uuid,"
+        f" labels(target) AS labels,"
+        f" coalesce(target.name, target.title, null) AS name,"
+        f" raw_score / seed_count AS ppr_score,"
+        f" min_distance,"
+        f" total_paths AS path_count"
+        f" ORDER BY ppr_score DESC LIMIT $limit"
     )
 
 

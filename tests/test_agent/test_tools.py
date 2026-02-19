@@ -39,9 +39,9 @@ def _error_result() -> RetrievalResult:
 # --- AGENT_TOOLS definition tests ---
 
 
-def test_agent_tools_has_four_definitions() -> None:
-    """AGENT_TOOLS contains exactly 4 tool definitions."""
-    assert len(AGENT_TOOLS) == 4
+def test_agent_tools_has_six_definitions() -> None:
+    """AGENT_TOOLS contains exactly 6 tool definitions."""
+    assert len(AGENT_TOOLS) == 6
 
 
 def test_agent_tools_names() -> None:
@@ -51,6 +51,8 @@ def test_agent_tools_names() -> None:
         "execute_cypher",
         "vector_search",
         "expand_node",
+        "shortest_path",
+        "pagerank",
         "submit_answer",
     }
 
@@ -509,3 +511,181 @@ async def test_submit_answer_low_confidence(router: ToolRouter) -> None:
 
     assert result["success"] is True
     assert result["confidence"] == 0.1
+
+
+# --- shortest_path tool definition tests ---
+
+
+def test_shortest_path_requires_source_and_target() -> None:
+    """shortest_path tool requires source_id and target_id."""
+    tool = next(t for t in AGENT_TOOLS if t.name == "shortest_path")
+    assert tool.parameters["required"] == ["source_id", "target_id"]
+    assert "source_id" in tool.parameters["properties"]
+    assert "target_id" in tool.parameters["properties"]
+    assert "max_length" in tool.parameters["properties"]
+    assert tool.parameters["properties"]["max_length"]["default"] == 10
+    assert "all_shortest" in tool.parameters["properties"]
+    assert tool.parameters["properties"]["all_shortest"]["default"] is False
+
+
+# --- shortest_path handler tests ---
+
+
+@pytest.mark.anyio
+async def test_shortest_path_calls_hybrid_retriever(
+    router: ToolRouter,
+    mock_hybrid_retriever: MagicMock,
+) -> None:
+    """shortest_path handler passes context to HybridRetriever."""
+    mock_hybrid_retriever.retrieve.return_value = _success_result()
+    tool_call = ToolCall(
+        id="5",
+        name="shortest_path",
+        arguments={
+            "source_id": "A",
+            "target_id": "B",
+            "max_length": 5,
+        },
+    )
+
+    await router.route(tool_call)
+
+    mock_hybrid_retriever.retrieve.assert_awaited_once_with(
+        "A",
+        {
+            "action": "shortest_path",
+            "source_id": "A",
+            "target_id": "B",
+            "relationship_types": None,
+            "max_length": 5,
+            "all_shortest": False,
+        },
+    )
+
+
+@pytest.mark.anyio
+async def test_shortest_path_defaults(
+    router: ToolRouter,
+    mock_hybrid_retriever: MagicMock,
+) -> None:
+    """shortest_path handler defaults max_length and all_shortest."""
+    mock_hybrid_retriever.retrieve.return_value = _success_result()
+    tool_call = ToolCall(
+        id="5",
+        name="shortest_path",
+        arguments={"source_id": "A", "target_id": "B"},
+    )
+
+    await router.route(tool_call)
+
+    _, context = mock_hybrid_retriever.retrieve.await_args[0]
+    assert context["max_length"] == 10
+    assert context["all_shortest"] is False
+    assert context["relationship_types"] is None
+
+
+@pytest.mark.anyio
+async def test_shortest_path_unavailable_without_hybrid(
+    router_cypher_only: ToolRouter,
+) -> None:
+    """shortest_path returns error when hybrid retriever is not configured."""
+    tool_call = ToolCall(
+        id="5",
+        name="shortest_path",
+        arguments={"source_id": "A", "target_id": "B"},
+    )
+
+    result = await router_cypher_only.route(tool_call)
+
+    assert result["success"] is False
+    assert "not available" in result["error"]
+
+
+# --- pagerank tool definition tests ---
+
+
+def test_pagerank_requires_source_ids() -> None:
+    """pagerank tool requires source_ids."""
+    tool = next(t for t in AGENT_TOOLS if t.name == "pagerank")
+    assert tool.parameters["required"] == ["source_ids"]
+    assert "source_ids" in tool.parameters["properties"]
+    assert "damping" in tool.parameters["properties"]
+    assert tool.parameters["properties"]["damping"]["default"] == 0.85
+    assert "limit" in tool.parameters["properties"]
+    assert tool.parameters["properties"]["limit"]["default"] == 20
+    assert "max_depth" in tool.parameters["properties"]
+    assert tool.parameters["properties"]["max_depth"]["default"] == 3
+
+
+# --- pagerank handler tests ---
+
+
+@pytest.mark.anyio
+async def test_pagerank_calls_hybrid_retriever(
+    router: ToolRouter,
+    mock_hybrid_retriever: MagicMock,
+) -> None:
+    """pagerank handler passes context to HybridRetriever."""
+    mock_hybrid_retriever.retrieve.return_value = _success_result()
+    tool_call = ToolCall(
+        id="6",
+        name="pagerank",
+        arguments={
+            "source_ids": ["A", "B"],
+            "damping": 0.9,
+            "limit": 10,
+        },
+    )
+
+    await router.route(tool_call)
+
+    mock_hybrid_retriever.retrieve.assert_awaited_once_with(
+        "A,B",
+        {
+            "action": "pagerank",
+            "source_ids": ["A", "B"],
+            "damping": 0.9,
+            "limit": 10,
+            "max_depth": 3,
+            "relationship_types": None,
+        },
+    )
+
+
+@pytest.mark.anyio
+async def test_pagerank_defaults(
+    router: ToolRouter,
+    mock_hybrid_retriever: MagicMock,
+) -> None:
+    """pagerank handler defaults damping, limit, max_depth."""
+    mock_hybrid_retriever.retrieve.return_value = _success_result()
+    tool_call = ToolCall(
+        id="6",
+        name="pagerank",
+        arguments={"source_ids": ["A"]},
+    )
+
+    await router.route(tool_call)
+
+    _, context = mock_hybrid_retriever.retrieve.await_args[0]
+    assert context["damping"] == 0.85
+    assert context["limit"] == 20
+    assert context["max_depth"] == 3
+    assert context["relationship_types"] is None
+
+
+@pytest.mark.anyio
+async def test_pagerank_unavailable_without_hybrid(
+    router_cypher_only: ToolRouter,
+) -> None:
+    """pagerank returns error when hybrid retriever is not configured."""
+    tool_call = ToolCall(
+        id="6",
+        name="pagerank",
+        arguments={"source_ids": ["A"]},
+    )
+
+    result = await router_cypher_only.route(tool_call)
+
+    assert result["success"] is False
+    assert "not available" in result["error"]

@@ -103,6 +103,81 @@ AGENT_TOOLS: list[ToolDefinition] = [
         },
     ),
     ToolDefinition(
+        name="shortest_path",
+        description=(
+            "Find the shortest path(s) between two known nodes by UUID. "
+            "Uses built-in Cypher shortestPath — no GDS required."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "source_id": {
+                    "type": "string",
+                    "description": "UUID of the source node",
+                },
+                "target_id": {
+                    "type": "string",
+                    "description": "UUID of the target node",
+                },
+                "relationship_types": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": ("Filter to specific relationship types (optional)"),
+                },
+                "max_length": {
+                    "type": "integer",
+                    "description": "Maximum path length to consider",
+                    "default": 10,
+                },
+                "all_shortest": {
+                    "type": "boolean",
+                    "description": ("Return all shortest paths instead of just one"),
+                    "default": False,
+                },
+            },
+            "required": ["source_id", "target_id"],
+        },
+    ),
+    ToolDefinition(
+        name="pagerank",
+        description=(
+            "Run Personalized PageRank from seed node UUIDs to find "
+            "structurally important nodes around them. Uses GDS when "
+            "available, falls back to a Cypher heuristic."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "source_ids": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of seed node UUIDs to rank from",
+                },
+                "damping": {
+                    "type": "number",
+                    "description": "Damping factor for PageRank",
+                    "default": 0.85,
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of ranked nodes to return",
+                    "default": 20,
+                },
+                "max_depth": {
+                    "type": "integer",
+                    "description": ("Maximum traversal depth for Cypher fallback"),
+                    "default": 3,
+                },
+                "relationship_types": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": ("Filter to specific relationship types (optional)"),
+                },
+            },
+            "required": ["source_ids"],
+        },
+    ),
+    ToolDefinition(
         name="submit_answer",
         description=(
             "Submit the final answer when confident the question has been answered"
@@ -151,6 +226,8 @@ class ToolRouter:
             "execute_cypher": self._handle_execute_cypher,
             "vector_search": self._handle_vector_search,
             "expand_node": self._handle_expand_node,
+            "shortest_path": self._handle_shortest_path,
+            "pagerank": self._handle_pagerank,
             "submit_answer": self._handle_submit_answer,
         }
 
@@ -218,6 +295,56 @@ class ToolRouter:
             "max_branching": args.get("max_branching"),
         }
         result = await self._hybrid_retriever.retrieve(node_id, context)
+        return {
+            "success": result.success,
+            "data": result.data,
+            "message": result.message,
+        }
+
+    async def _handle_shortest_path(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Find shortest path(s) between two nodes via the HybridRetriever."""
+        if self._hybrid_retriever is None:
+            return {
+                "error": (
+                    "Shortest path is not available. Hybrid retriever not configured."
+                ),
+                "success": False,
+            }
+        source_id: str = args["source_id"]
+        context: dict[str, Any] = {
+            "action": "shortest_path",
+            "source_id": source_id,
+            "target_id": args["target_id"],
+            "relationship_types": args.get("relationship_types"),
+            "max_length": args.get("max_length", 10),
+            "all_shortest": args.get("all_shortest", False),
+        }
+        result = await self._hybrid_retriever.retrieve(source_id, context)
+        return {
+            "success": result.success,
+            "data": result.data,
+            "message": result.message,
+        }
+
+    async def _handle_pagerank(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Run Personalized PageRank via the HybridRetriever."""
+        if self._hybrid_retriever is None:
+            return {
+                "error": (
+                    "PageRank is not available. Hybrid retriever not configured."
+                ),
+                "success": False,
+            }
+        source_ids: list[str] = args["source_ids"]
+        context: dict[str, Any] = {
+            "action": "pagerank",
+            "source_ids": source_ids,
+            "damping": args.get("damping", 0.85),
+            "limit": args.get("limit", 20),
+            "max_depth": args.get("max_depth", 3),
+            "relationship_types": args.get("relationship_types"),
+        }
+        result = await self._hybrid_retriever.retrieve(",".join(source_ids), context)
         return {
             "success": result.success,
             "data": result.data,

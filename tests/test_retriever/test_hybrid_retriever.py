@@ -12,6 +12,9 @@ from agentic_graph_rag.retriever.hybrid_retriever import (
     HybridScoreWeights,
     _apply_max_branching,
     _build_expand_query,
+    _build_ppr_cypher_fallback,
+    _build_ppr_gds_query,
+    _build_shortest_path_query,
     blend_scores,
 )
 from agentic_graph_rag.vector.base import VectorSearchResult, VectorStore
@@ -775,3 +778,405 @@ def test_blend_scores_custom_weights() -> None:
     )
     result = blend_scores(candidates, graph_paths=paths, weights=heavy_graph)
     assert result[0]["uuid"] == "B"
+
+
+# --- _build_shortest_path_query tests ---
+
+
+def test_build_sp_query_uses_shortestPath_by_default() -> None:
+    """Default uses shortestPath (not allShortestPaths)."""
+    query = _build_shortest_path_query("uuid", None, 10, all_shortest=False)
+    assert "shortestPath(" in query
+    assert "allShortestPaths" not in query
+
+
+def test_build_sp_query_uses_allShortestPaths_when_flag_set() -> None:
+    """all_shortest=True uses allShortestPaths."""
+    query = _build_shortest_path_query("uuid", None, 10, all_shortest=True)
+    assert "allShortestPaths(" in query
+
+
+def test_build_sp_query_includes_max_length() -> None:
+    """Query includes the max_length cap in path pattern."""
+    query = _build_shortest_path_query("uuid", None, 5, all_shortest=False)
+    assert "*..5" in query
+
+
+def test_build_sp_query_with_relationship_filter() -> None:
+    """Query includes relationship type filter in pattern."""
+    query = _build_shortest_path_query(
+        "uuid", ["ACTED_IN", "DIRECTED"], 10, all_shortest=False
+    )
+    assert "ACTED_IN|DIRECTED" in query
+
+
+def test_build_sp_query_without_relationship_filter() -> None:
+    """Query has no rel type filter when relationship_types is None."""
+    query = _build_shortest_path_query("uuid", None, 10, all_shortest=False)
+    assert "[*..10]" in query
+
+
+def test_build_sp_query_returns_path_fields() -> None:
+    """Query returns start_uuid, end_uuid, path_length, path_nodes, path_rels."""
+    query = _build_shortest_path_query("uuid", None, 10, all_shortest=False)
+    assert "start_uuid" in query
+    assert "end_uuid" in query
+    assert "path_length" in query
+    assert "path_nodes" in query
+    assert "path_rels" in query
+
+
+def test_build_sp_query_uses_custom_uuid_property() -> None:
+    """Query uses the configured uuid_property throughout."""
+    query = _build_shortest_path_query("node_id", None, 10, all_shortest=False)
+    assert "node_id: $source_uuid" in query
+    assert "node_id: $target_uuid" in query
+    assert "n.node_id" in query
+    assert "startNode(rel).node_id" in query
+    assert "endNode(rel).node_id" in query
+
+
+# --- shortest_path action handler tests ---
+
+
+@pytest.mark.anyio
+async def test_shortest_path_executes_cypher(
+    retriever: HybridRetriever,
+    graph_db: MagicMock,
+) -> None:
+    """shortest_path executes Cypher with source and target UUIDs."""
+    graph_db.execute.return_value = QueryResult(
+        records=[
+            {
+                "start_uuid": "A",
+                "end_uuid": "B",
+                "path_length": 2,
+                "path_nodes": [
+                    {"uuid": "A", "labels": ["Person"], "name": "Alice"},
+                    {"uuid": "X", "labels": ["Movie"], "name": "M1"},
+                    {"uuid": "B", "labels": ["Person"], "name": "Bob"},
+                ],
+                "path_rels": [
+                    {"type": "ACTED_IN", "from_uuid": "A", "to_uuid": "X"},
+                    {"type": "ACTED_IN", "from_uuid": "B", "to_uuid": "X"},
+                ],
+            }
+        ],
+        summary={},
+        error=None,
+    )
+
+    result = await retriever.retrieve(
+        "A",
+        {
+            "action": "shortest_path",
+            "source_id": "A",
+            "target_id": "B",
+            "max_length": 5,
+        },
+    )
+
+    assert result.success is True
+    assert len(result.data) == 1
+    assert result.data[0]["start_uuid"] == "A"
+    assert result.data[0]["end_uuid"] == "B"
+    cypher = graph_db.execute.await_args[0][0]
+    assert "shortestPath" in cypher
+    assert "*..5" in cypher
+
+
+@pytest.mark.anyio
+async def test_shortest_path_missing_source_returns_error(
+    retriever: HybridRetriever,
+) -> None:
+    """shortest_path returns error when source_id is missing."""
+    result = await retriever.retrieve(
+        "",
+        {"action": "shortest_path", "target_id": "B"},
+    )
+    assert result.success is False
+    assert "source_id" in result.message or "Missing" in result.message
+
+
+@pytest.mark.anyio
+async def test_shortest_path_missing_target_returns_error(
+    retriever: HybridRetriever,
+) -> None:
+    """shortest_path returns error when target_id is missing."""
+    result = await retriever.retrieve(
+        "A",
+        {"action": "shortest_path", "source_id": "A"},
+    )
+    assert result.success is False
+    assert "target_id" in result.message or "Missing" in result.message
+
+
+@pytest.mark.anyio
+async def test_shortest_path_handles_graph_error(
+    retriever: HybridRetriever,
+    graph_db: MagicMock,
+) -> None:
+    """shortest_path returns error when graph execution fails."""
+    graph_db.execute.return_value = QueryResult(
+        records=[], summary={}, error="Graph error"
+    )
+
+    result = await retriever.retrieve(
+        "A",
+        {"action": "shortest_path", "source_id": "A", "target_id": "B"},
+    )
+
+    assert result.success is False
+    assert "failed" in result.message
+
+
+@pytest.mark.anyio
+async def test_shortest_path_all_shortest_flag(
+    retriever: HybridRetriever,
+    graph_db: MagicMock,
+) -> None:
+    """shortest_path with all_shortest=True uses allShortestPaths."""
+    graph_db.execute.return_value = QueryResult(records=[], summary={}, error=None)
+
+    await retriever.retrieve(
+        "A",
+        {
+            "action": "shortest_path",
+            "source_id": "A",
+            "target_id": "B",
+            "all_shortest": True,
+        },
+    )
+
+    cypher = graph_db.execute.await_args[0][0]
+    assert "allShortestPaths" in cypher
+
+
+@pytest.mark.anyio
+async def test_shortest_path_step_records_input(
+    retriever: HybridRetriever,
+    graph_db: MagicMock,
+) -> None:
+    """shortest_path step input includes all parameters."""
+    graph_db.execute.return_value = QueryResult(records=[], summary={}, error=None)
+
+    result = await retriever.retrieve(
+        "A",
+        {
+            "action": "shortest_path",
+            "source_id": "A",
+            "target_id": "B",
+            "max_length": 7,
+            "all_shortest": True,
+        },
+    )
+
+    step = result.steps[0]
+    assert step.input["source_id"] == "A"
+    assert step.input["target_id"] == "B"
+    assert step.input["max_length"] == 7
+    assert step.input["all_shortest"] is True
+
+
+# --- _build_ppr_gds_query tests ---
+
+
+def test_build_ppr_gds_query_structure() -> None:
+    """GDS PPR query includes sourceNodes, dampingFactor, and limit."""
+    query = _build_ppr_gds_query("uuid", None)
+    assert "gds.pageRank.stream" in query
+    assert "$source_uuids" in query
+    assert "dampingFactor: $damping" in query
+    assert "LIMIT $limit" in query
+    assert "ppr_score" in query
+
+
+def test_build_ppr_gds_query_with_rel_filter() -> None:
+    """GDS PPR query includes relationship type projection."""
+    query = _build_ppr_gds_query("uuid", ["ACTED_IN", "DIRECTED"])
+    assert "ACTED_IN" in query
+    assert "DIRECTED" in query
+
+
+def test_build_ppr_gds_query_uses_custom_uuid() -> None:
+    """GDS PPR query uses configured uuid_property."""
+    query = _build_ppr_gds_query("node_id", None)
+    assert "node_id" in query
+    assert "n.node_id AS uuid" in query
+
+
+# --- _build_ppr_cypher_fallback tests ---
+
+
+def test_build_ppr_fallback_query_structure() -> None:
+    """Cypher fallback PPR query includes damping, path counting, limit."""
+    query = _build_ppr_cypher_fallback("uuid", 3, None)
+    assert "$source_uuids" in query
+    assert "$damping" in query
+    assert "*1..3" in query
+    assert "ppr_score" in query
+    assert "min_distance" in query
+    assert "path_count" in query
+    assert "LIMIT $limit" in query
+
+
+def test_build_ppr_fallback_with_rel_filter() -> None:
+    """Cypher fallback PPR query includes relationship type filter."""
+    query = _build_ppr_cypher_fallback("uuid", 3, ["ACTED_IN"])
+    assert "ACTED_IN" in query
+
+
+def test_build_ppr_fallback_uses_custom_uuid() -> None:
+    """Cypher fallback PPR query uses configured uuid_property."""
+    query = _build_ppr_cypher_fallback("node_id", 3, None)
+    assert "node_id" in query
+    assert "target.node_id AS uuid" in query
+
+
+# --- pagerank action handler tests ---
+
+
+@pytest.mark.anyio
+async def test_pagerank_missing_source_ids_returns_error(
+    retriever: HybridRetriever,
+) -> None:
+    """pagerank returns error when source_ids is empty."""
+    result = await retriever.retrieve(
+        "",
+        {"action": "pagerank", "source_ids": []},
+    )
+    assert result.success is False
+    assert "source_ids" in result.message or "Missing" in result.message
+
+
+@pytest.mark.anyio
+async def test_pagerank_uses_cypher_fallback_when_no_gds(
+    retriever: HybridRetriever,
+    graph_db: MagicMock,
+) -> None:
+    """pagerank uses Cypher fallback when has_gds() returns False."""
+    graph_db.has_gds = AsyncMock(return_value=False)
+    graph_db.execute.return_value = QueryResult(
+        records=[
+            {
+                "uuid": "X",
+                "labels": ["Movie"],
+                "name": "Matrix",
+                "ppr_score": 0.42,
+                "min_distance": 1,
+                "path_count": 3,
+            }
+        ],
+        summary={},
+        error=None,
+    )
+
+    result = await retriever.retrieve(
+        "A",
+        {"action": "pagerank", "source_ids": ["A"]},
+    )
+
+    assert result.success is True
+    assert len(result.data) == 1
+    assert result.data[0]["uuid"] == "X"
+    assert result.steps[0].output["backend"] == "cypher_fallback"
+
+
+@pytest.mark.anyio
+async def test_pagerank_uses_gds_when_available(
+    retriever: HybridRetriever,
+    graph_db: MagicMock,
+) -> None:
+    """pagerank uses GDS path when has_gds() returns True."""
+    graph_db.has_gds = AsyncMock(return_value=True)
+    graph_db.execute.return_value = QueryResult(
+        records=[
+            {
+                "uuid": "X",
+                "labels": ["Movie"],
+                "name": "Matrix",
+                "ppr_score": 0.75,
+            }
+        ],
+        summary={},
+        error=None,
+    )
+
+    result = await retriever.retrieve(
+        "A",
+        {"action": "pagerank", "source_ids": ["A"]},
+    )
+
+    assert result.success is True
+    assert result.steps[0].output["backend"] == "gds"
+    cypher = graph_db.execute.await_args[0][0]
+    assert "gds.pageRank.stream" in cypher
+
+
+@pytest.mark.anyio
+async def test_pagerank_handles_graph_error(
+    retriever: HybridRetriever,
+    graph_db: MagicMock,
+) -> None:
+    """pagerank returns error when both GDS and fallback fail."""
+    graph_db.has_gds = AsyncMock(return_value=False)
+    graph_db.execute.return_value = QueryResult(
+        records=[], summary={}, error="Graph error"
+    )
+
+    result = await retriever.retrieve(
+        "A",
+        {"action": "pagerank", "source_ids": ["A"]},
+    )
+
+    assert result.success is False
+    assert "failed" in result.message
+
+
+@pytest.mark.anyio
+async def test_pagerank_step_records_input(
+    retriever: HybridRetriever,
+    graph_db: MagicMock,
+) -> None:
+    """pagerank step input includes all parameters."""
+    graph_db.has_gds = AsyncMock(return_value=False)
+    graph_db.execute.return_value = QueryResult(records=[], summary={}, error=None)
+
+    result = await retriever.retrieve(
+        "A",
+        {
+            "action": "pagerank",
+            "source_ids": ["A", "B"],
+            "damping": 0.9,
+            "limit": 10,
+            "max_depth": 4,
+        },
+    )
+
+    step = result.steps[0]
+    assert step.input["source_ids"] == ["A", "B"]
+    assert step.input["damping"] == 0.9
+    assert step.input["limit"] == 10
+    assert step.input["max_depth"] == 4
+
+
+@pytest.mark.anyio
+async def test_pagerank_message_includes_count_and_backend(
+    retriever: HybridRetriever,
+    graph_db: MagicMock,
+) -> None:
+    """pagerank success message reports node count and backend."""
+    graph_db.has_gds = AsyncMock(return_value=False)
+    graph_db.execute.return_value = QueryResult(
+        records=[{"uuid": "X"}] * 5,
+        summary={},
+        error=None,
+    )
+
+    result = await retriever.retrieve(
+        "A",
+        {"action": "pagerank", "source_ids": ["A"]},
+    )
+
+    assert "5 nodes" in result.message
+    assert "cypher_fallback" in result.message

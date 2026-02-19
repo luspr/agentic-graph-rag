@@ -353,3 +353,62 @@ async def test_get_schema_returns_empty_on_error(
     schema = await client.get_schema()
     assert schema.node_types == []
     assert schema.relationship_types == []
+
+
+# --- has_gds() tests ---
+
+
+@pytest.mark.anyio
+async def test_has_gds_returns_true_when_gds_available(
+    settings: Settings,
+) -> None:
+    """has_gds() returns True when gds.version() succeeds."""
+    client = Neo4jClient(settings)
+
+    async def _mock_execute(
+        cypher: str, params: dict[str, Any] | None = None
+    ) -> QueryResult:
+        if "gds.version()" in cypher:
+            return QueryResult(records=[{"version": "2.6.0"}], summary={})
+        return QueryResult(records=[], summary={})
+
+    client.execute = _mock_execute  # type: ignore[assignment]
+
+    assert await client.has_gds() is True
+
+
+@pytest.mark.anyio
+async def test_has_gds_returns_false_when_gds_unavailable(
+    settings: Settings,
+) -> None:
+    """has_gds() returns False when gds.version() fails."""
+    client = Neo4jClient(settings)
+
+    async def _mock_execute(
+        cypher: str, params: dict[str, Any] | None = None
+    ) -> QueryResult:
+        return QueryResult(records=[], summary={}, error="Unknown function")
+
+    client.execute = _mock_execute  # type: ignore[assignment]
+
+    assert await client.has_gds() is False
+
+
+@pytest.mark.anyio
+async def test_has_gds_caches_result(settings: Settings) -> None:
+    """has_gds() caches after first probe and does not re-execute."""
+    client = Neo4jClient(settings)
+    call_count = 0
+
+    async def _counting_execute(
+        cypher: str, params: dict[str, Any] | None = None
+    ) -> QueryResult:
+        nonlocal call_count
+        call_count += 1
+        return QueryResult(records=[{"version": "2.6.0"}], summary={})
+
+    client.execute = _counting_execute  # type: ignore[assignment]
+
+    assert await client.has_gds() is True
+    assert await client.has_gds() is True
+    assert call_count == 1

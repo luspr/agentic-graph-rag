@@ -71,7 +71,23 @@ the relationship direction from the schema
    - Read the path structure carefully: the relationship types and directions tell you \
 HOW entities are connected, not just THAT they are connected
 
-3. **execute_cypher**: Run a Cypher query for targeted or aggregated data retrieval
+3. **shortest_path**: Find the shortest path(s) between two known nodes
+   - Use this when you know both endpoints and want to discover HOW they are connected
+   - Input: source_id (UUID), target_id (UUID)
+   - Optional: relationship_types filter, max_length cap, all_shortest flag
+   - Returns: path_nodes, path_rels, path_length — same structure as expand_node
+   - Uses built-in Cypher shortestPath — no additional plugins required
+   - Use `all_shortest: true` to see all equally-short paths, not just one
+
+4. **pagerank**: Find structurally important nodes around seed nodes
+   - Use this to rank nodes by structural importance relative to your seeds
+   - Input: source_ids (list of seed UUIDs from vector search or expansion)
+   - Optional: damping (default 0.85), limit (default 20), max_depth, relationship_types
+   - Returns: uuid, labels, name, ppr_score — sorted by importance
+   - Useful for identifying hub entities or central nodes in a subgraph
+   - Uses GDS when available, automatically falls back to Cypher heuristic
+
+5. **execute_cypher**: Run a Cypher query for targeted or aggregated data retrieval
    - Use this when you need specific patterns, aggregations, or filtering that \
 expand_node cannot express
    - Examples: counting, sorting, multi-hop patterns with conditions, OPTIONAL MATCH, \
@@ -79,7 +95,7 @@ collecting lists
    - Write valid Cypher using the exact node labels and relationship types from the schema
    - Always provide a reasoning explaining why this query helps answer the question
 
-4. **submit_answer**: Submit your final answer with evidence
+6. **submit_answer**: Submit your final answer with evidence
    - Provide the answer, a confidence score (0.0 to 1.0), and supporting evidence
    - Reference specific nodes, relationships, and paths you discovered
    - Only submit when you have sufficient evidence from the graph
@@ -104,6 +120,18 @@ Follow this workflow to answer questions effectively:
   - Expanding from a different seed node
   - Using `direction` to follow relationships in a specific direction
 
+### Step 2b: Connect — Use shortest_path for targeted connections
+- When you know two entities and want to understand HOW they are connected, use `shortest_path`
+- Useful for verifying claimed relationships or discovering indirect connections
+- Examine the returned path_rels to understand the chain of relationships
+- Use `all_shortest: true` to see all equally-short connection paths
+
+### Step 2c: Rank — Use pagerank to find structurally important nodes
+- After seeding, use `pagerank` with seed UUIDs to discover hub entities
+- Highly-ranked nodes are structurally central — often key entities for the answer
+- Expand from top-ranked nodes to gather additional evidence
+- Useful when vector search returns many seeds and you need to prioritize
+
 ### Step 3: Verify — Use targeted Cypher for precision
 - When you need to confirm, aggregate, or filter, use `execute_cypher`
 - Useful for: counting results, checking specific properties, complex multi-hop patterns, \
@@ -125,7 +153,8 @@ nodes, try different relationship types, or increase depth. Don't guess.
 - **Prefer graph over assumptions**: Always verify claims through the graph. If the \
 question asks about relationships, use expand_node or Cypher to confirm them.
 - **Use the right tool**: vector_search for discovery, expand_node for neighborhood \
-exploration, execute_cypher for precise queries. Combine them.
+exploration, shortest_path for targeted connections, pagerank for structural ranking, \
+execute_cypher for precise queries. Combine them.
 """
 RETRIEVAL_PROMPT_TEMPLATE = """## User Question
 
@@ -143,7 +172,7 @@ RETRIEVAL_PROMPT_TEMPLATE = """## User Question
 
 Based on the above information, decide your next action:
 - If you have enough information to answer the question, use submit_answer
-- If you need more data, use execute_cypher, vector_search, or expand_node
+- If you need more data, use execute_cypher, vector_search, expand_node, shortest_path, or pagerank
 - Consider what information is missing and formulate targeted queries
 """
 

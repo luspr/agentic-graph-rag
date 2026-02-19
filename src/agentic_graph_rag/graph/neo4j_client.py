@@ -51,6 +51,7 @@ class Neo4jClient(GraphDatabase):
         """Initialize with application settings."""
         self._settings = settings
         self._driver: AsyncDriver | None = None
+        self._gds_available: bool | None = None
 
     async def __aenter__(self) -> "Neo4jClient":
         """Open connection pool on context entry."""
@@ -118,6 +119,17 @@ class Neo4jClient(GraphDatabase):
             return (True, None)
         except Neo4jError as e:
             return (False, str(e))
+
+    async def has_gds(self) -> bool:
+        """Check whether the Neo4j Graph Data Science library is available.
+
+        Caches the result after the first successful probe.
+        """
+        if self._gds_available is not None:
+            return self._gds_available
+        result = await self.execute("RETURN gds.version() AS version")
+        self._gds_available = result.error is None
+        return self._gds_available
 
     async def _fetch_node_types(self) -> list[NodeType]:
         """Query node labels with their properties and counts."""
