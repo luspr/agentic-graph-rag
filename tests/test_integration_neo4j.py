@@ -223,9 +223,9 @@ async def test_get_schema_relationships_have_labels(
     for rt in schema.relationship_types:
         assert rt.start_labels, f"start_labels empty for {rt.type}"
         assert rt.end_labels, f"end_labels empty for {rt.type}"
-        assert rt.start_label_expression != "", (
-            f"start_label_expression empty for {rt.type}"
-        )
-        assert rt.end_label_expression != "", (
-            f"end_label_expression empty for {rt.type}"
-        )
+        assert (
+            rt.start_label_expression != ""
+        ), f"start_label_expression empty for {rt.type}"
+        assert (
+            rt.end_label_expression != ""
+        ), f"end_label_expression empty for {rt.type}"
