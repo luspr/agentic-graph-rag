@@ -1,5 +1,6 @@
 """Unit tests for QdrantVectorStore with mocked Qdrant client."""
 
+import uuid
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -145,7 +146,11 @@ async def test_upsert_inserts_point(settings: Settings) -> None:
     _, kwargs = await_args
     assert kwargs["collection_name"] == "movies"
     assert len(kwargs["points"]) == 1
-    assert kwargs["points"][0].id == "node-1"
+    point = kwargs["points"][0]
+    assert isinstance(point.id, str)
+    # Non-UUID app IDs are mapped to deterministic UUID point IDs.
+    uuid.UUID(point.id)
+    assert point.payload["uuid"] == "node-1"
 
 
 @pytest.mark.anyio
@@ -170,6 +175,32 @@ async def test_upsert_uses_named_vector_when_collection_named(
     _, kwargs = await_args
     point = kwargs["points"][0]
     assert point.vector == {"vector": [0.1, 0.2, 0.3]}
+
+
+@pytest.mark.anyio
+async def test_search_prefers_payload_uuid_over_point_id(settings: Settings) -> None:
+    """search() returns payload UUID when present for graph/vector ID contract."""
+    response = models.QueryResponse(
+        points=[
+            models.ScoredPoint(
+                id=str(uuid.uuid4()),
+                version=1,
+                score=0.9,
+                payload={"uuid": "author:tianyi_li", "title": "Author node"},
+            )
+        ]
+    )
+    mock_client = MagicMock()
+    mock_client.get_collection = AsyncMock(return_value=MagicMock())
+    mock_client.query_points = AsyncMock(return_value=response)
+
+    with patch(_PATCH_TARGET, return_value=mock_client):
+        store = QdrantVectorStore(settings, "movies", vector_size=3)
+        results = await store.search([0.1, 0.2, 0.3], limit=1)
+
+    assert len(results) == 1
+    assert results[0].id == "author:tianyi_li"
+    assert results[0].payload["uuid"] == "author:tianyi_li"
 
 
 @pytest.mark.anyio

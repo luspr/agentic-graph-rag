@@ -19,12 +19,12 @@ _NODE_PROPERTIES_QUERY = (
     "CALL db.schema.nodeTypeProperties() YIELD nodeLabels, propertyName, propertyTypes"
 )
 
-_NODE_COUNTS_QUERY = "MATCH (n) RETURN labels(n)[0] AS label, count(*) AS count"
+_NODE_COUNTS_QUERY = "MATCH (n) RETURN labels(n) AS labels, count(*) AS count"
 
 _REL_STRUCTURE_QUERY = (
     "MATCH (a)-[r]->(b) "
     "RETURN DISTINCT type(r) AS type, "
-    "labels(a)[0] AS start_label, labels(b)[0] AS end_label"
+    "labels(a) AS start_labels, labels(b) AS end_labels"
 )
 
 _REL_PROPERTIES_QUERY = (
@@ -42,6 +42,26 @@ _REL_PROPERTIES_FALLBACK_QUERY = (
     "WITH relationshipType, propertyName, valueType(r[propertyName]) AS propertyType "
     "RETURN relationshipType, propertyName, collect(DISTINCT propertyType) AS propertyTypes"
 )
+
+
+def _canonical_labels(raw_labels: Any) -> tuple[str, ...]:
+    """Normalize Neo4j label arrays into a deterministic label-set key."""
+    if not isinstance(raw_labels, list):
+        return ()
+    labels = [label for label in raw_labels if isinstance(label, str) and label]
+    return tuple(sorted(set(labels)))
+
+
+def _label_expression(labels: tuple[str, ...]) -> str:
+    """Return a display-friendly label expression for prompt rendering."""
+    return ":".join(labels) if labels else "UNLABELED"
+
+
+def _normalize_relationship_type(raw_type: Any) -> str:
+    """Normalize relationship type strings from Neo4j schema procedures."""
+    if not isinstance(raw_type, str):
+        return ""
+    return raw_type.lstrip(":")
 
 
 class Neo4jClient(GraphDatabase):
@@ -132,41 +152,47 @@ class Neo4jClient(GraphDatabase):
         return self._gds_available
 
     async def _fetch_node_types(self) -> list[NodeType]:
-        """Query node labels with their properties and counts."""
+        """Query node classes (exact label sets) with their properties and counts."""
         props_result = await self.execute(_NODE_PROPERTIES_QUERY)
         counts_result = await self.execute(_NODE_COUNTS_QUERY)
 
         if props_result.error or counts_result.error:
             return []
 
-        counts: dict[str, int] = {
-            row["label"]: row["count"]
-            for row in counts_result.records
-            if row.get("label")
-        }
+        counts: dict[tuple[str, ...], int] = {}
+        for row in counts_result.records:
+            labels = _canonical_labels(row.get("labels", []))
+            count = row.get("count")
+            if isinstance(count, int):
+                counts[labels] = count
 
-        properties: dict[str, dict[str, str]] = defaultdict(dict)
+        properties: dict[tuple[str, ...], dict[str, str]] = defaultdict(dict)
         for row in props_result.records:
-            labels = row.get("nodeLabels", [])
+            labels = _canonical_labels(row.get("nodeLabels", []))
+            property_name = row.get("propertyName")
+            if not isinstance(property_name, str) or not property_name:
+                continue
             prop_types = row.get("propertyTypes", [])
-            if labels:
-                label = labels[0]
-                properties[label][row["propertyName"]] = (
-                    prop_types[0] if prop_types else "Unknown"
-                )
+            property_type = prop_types[0] if prop_types else "Unknown"
+            properties[labels][property_name] = str(property_type)
 
-        all_labels = set(counts.keys()) | set(properties.keys())
+        all_label_sets = set(counts.keys()) | set(properties.keys())
+        sorted_label_sets = sorted(
+            all_label_sets,
+            key=lambda labels: (-counts.get(labels, 0), _label_expression(labels)),
+        )
         return [
             NodeType(
-                label=label,
-                properties=properties.get(label, {}),
-                count=counts.get(label, 0),
+                labels=labels,
+                label_expression=_label_expression(labels),
+                properties=properties.get(labels, {}),
+                count=counts.get(labels, 0),
             )
-            for label in sorted(all_labels)
+            for labels in sorted_label_sets
         ]
 
     async def _fetch_relationship_types(self) -> list[RelationshipType]:
-        """Query relationship types with source/target labels and properties."""
+        """Query relationship types with full source/target label sets and properties."""
         structure_result = await self.execute(_REL_STRUCTURE_QUERY)
         props_result = await self.execute(_REL_PROPERTIES_QUERY)
 
@@ -187,17 +213,50 @@ class Neo4jClient(GraphDatabase):
 
         for row in props_records:
             prop_types = row.get("propertyTypes", [])
-            properties[row["relationshipType"]][row["propertyName"]] = (
-                prop_types[0] if prop_types else "Unknown"
+            relationship_type = _normalize_relationship_type(
+                row.get("relationshipType")
+            )
+            property_name = row.get("propertyName")
+            if (
+                not relationship_type
+                or not isinstance(property_name, str)
+                or not property_name
+            ):
+                continue
+            properties[relationship_type][property_name] = (
+                str(prop_types[0]) if prop_types else "Unknown"
             )
 
-        return [
-            RelationshipType(
-                type=row["type"],
-                start_label=row.get("start_label") or "",
-                end_label=row.get("end_label") or "",
-                properties=properties.get(row["type"], {}),
+        relationships: list[RelationshipType] = []
+        seen_keys: set[tuple[str, tuple[str, ...], tuple[str, ...]]] = set()
+        for row in structure_result.records:
+            relationship_type = _normalize_relationship_type(row.get("type"))
+            if not relationship_type:
+                continue
+
+            start_labels = _canonical_labels(row.get("start_labels", []))
+            end_labels = _canonical_labels(row.get("end_labels", []))
+            key = (relationship_type, start_labels, end_labels)
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+
+            relationships.append(
+                RelationshipType(
+                    type=relationship_type,
+                    start_labels=start_labels,
+                    end_labels=end_labels,
+                    start_label_expression=_label_expression(start_labels),
+                    end_label_expression=_label_expression(end_labels),
+                    properties=properties.get(relationship_type, {}),
+                )
             )
-            for row in structure_result.records
-            if row.get("type")
-        ]
+
+        return sorted(
+            relationships,
+            key=lambda rel: (
+                rel.type,
+                rel.start_label_expression,
+                rel.end_label_expression,
+            ),
+        )

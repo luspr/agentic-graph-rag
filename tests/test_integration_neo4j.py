@@ -16,9 +16,7 @@ from agentic_graph_rag.graph.neo4j_client import Neo4jClient
 # Fixture
 # ---------------------------------------------------------------------------
 
-# Labels that appear as the *first* label on at least one node.
-# "Person" is always co-labelled with Actor or Director in this dataset, so
-# labels(n)[0] never returns it — it's a subordinate label, not a primary one.
+# Expected labels present somewhere in the discovered node label combinations.
 DOCKER_COMPOSE_LABELS = {"Movie", "Genre", "Actor", "Director", "User"}
 DOCKER_COMPOSE_REL_TYPES = {"IN_GENRE", "RATED", "ACTED_IN", "DIRECTED"}
 
@@ -165,7 +163,7 @@ async def test_get_schema_returns_all_node_labels(settings: Settings) -> None:
     async with Neo4jClient(settings) as client:
         schema = await client.get_schema()
 
-    discovered_labels = {nt.label for nt in schema.node_types}
+    discovered_labels = {label for nt in schema.node_types for label in nt.labels}
     # Every expected label must be present
     assert DOCKER_COMPOSE_LABELS <= discovered_labels
 
@@ -180,7 +178,7 @@ async def test_get_schema_node_counts_are_positive(
         schema = await client.get_schema()
 
     for nt in schema.node_types:
-        assert nt.count > 0, f"Expected positive count for {nt.label}"
+        assert nt.count > 0, f"Expected positive count for {nt.label_expression}"
 
 
 @pytest.mark.integration
@@ -192,8 +190,9 @@ async def test_get_schema_movie_has_expected_properties(
     async with Neo4jClient(settings) as client:
         schema = await client.get_schema()
 
-    movie = next((nt for nt in schema.node_types if nt.label == "Movie"), None)
-    assert movie is not None, "Movie label not found in schema"
+    movie_candidates = [nt for nt in schema.node_types if "Movie" in nt.labels]
+    assert movie_candidates, "Movie label not found in schema"
+    movie = max(movie_candidates, key=lambda node_type: node_type.count)
     # The movies dataset always has at least these properties
     assert "title" in movie.properties
     assert "year" in movie.properties
@@ -217,10 +216,16 @@ async def test_get_schema_returns_all_relationship_types(
 async def test_get_schema_relationships_have_labels(
     settings: Settings,
 ) -> None:
-    """get_schema() populates start_label and end_label on every relationship type."""
+    """get_schema() populates start/end label sets on every relationship type."""
     async with Neo4jClient(settings) as client:
         schema = await client.get_schema()
 
     for rt in schema.relationship_types:
-        assert rt.start_label != "", f"start_label empty for {rt.type}"
-        assert rt.end_label != "", f"end_label empty for {rt.type}"
+        assert rt.start_labels, f"start_labels empty for {rt.type}"
+        assert rt.end_labels, f"end_labels empty for {rt.type}"
+        assert rt.start_label_expression != "", (
+            f"start_label_expression empty for {rt.type}"
+        )
+        assert rt.end_label_expression != "", (
+            f"end_label_expression empty for {rt.type}"
+        )

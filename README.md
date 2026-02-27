@@ -14,6 +14,20 @@ expands through graph traversal.
   `uv run agentic-graph-rag run --query "What movies did Tom Hanks act in?" --strategy cypher`
 - Evaluate a benchmark:
   `uv run agentic-graph-rag eval --input data/sr_rag/benchmark/benchmark_1637.jsonl --format sr_rag --strategy cypher`
+- Index arXiv papers into Neo4j + Qdrant (hybrid test data):
+  `uv run python scripts/index_arxiv_dataset.py --limit 200 --months-back 18`
+
+**ArXiv Ingestion Defaults**
+- Entity graph: `Paper`, `Chunk`, `Author`, `University`, `Category`, `Venue`.
+- Vector payload includes `uuid`, `dataset`, `entity_type`, `label`, `labels`,
+  and `display_name` for every point.
+- Default API safety profile is intentionally conservative:
+  - `--throttle-seconds 3.5`
+  - cached responses in `data/arxiv/cache` (TTL 24h)
+  - retry with backoff for transient failures
+- Incremental/idempotent behavior: reruns upsert nodes, relationships, and vectors
+  using stable deterministic IDs (no duplicate creation).
+- All ingested records are tagged with `dataset="arxiv"` so future filtering is easy.
 
 **Evaluation How It Works**
 The eval pipeline loads JSONL benchmarks, runs each question through the headless

@@ -45,7 +45,7 @@ AGENT_TOOLS: list[ToolDefinition] = [
                 "limit": {
                     "type": "integer",
                     "description": "Maximum number of vector results to return",
-                    "default": 5,
+                    "default": 10,
                 },
                 "filters": {
                     "type": "object",

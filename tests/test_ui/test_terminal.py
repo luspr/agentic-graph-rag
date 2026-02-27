@@ -44,7 +44,12 @@ def mock_graph_db() -> MagicMock:
     mock.get_schema = AsyncMock(
         return_value=GraphSchema(
             node_types=[
-                NodeType(label="Movie", properties={"title": "STRING"}, count=10)
+                NodeType(
+                    labels=("Movie",),
+                    label_expression="Movie",
+                    properties={"title": "STRING"},
+                    count=10,
+                )
             ],
             relationship_types=[],
         )

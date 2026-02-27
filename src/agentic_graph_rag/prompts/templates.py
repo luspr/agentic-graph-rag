@@ -176,13 +176,14 @@ Based on the above information, decide your next action:
 - Consider what information is missing and formulate targeted queries
 """
 
-SCHEMA_NODE_TEMPLATE = """### Node: {label}
+SCHEMA_NODE_TEMPLATE = """### Node Class: {label_expression}
 - Count: {count}
 - Properties: {properties}
 """
 
 SCHEMA_RELATIONSHIP_TEMPLATE = """### Relationship: {type}
-- Pattern: (:{start_label})-[:{type}]->(:{end_label})
+- Patterns:
+{patterns}
 - Properties: {properties}
 """
 

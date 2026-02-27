@@ -46,13 +46,20 @@ class _DummyGraph:
     async def get_schema(self) -> GraphSchema:
         return GraphSchema(
             node_types=[
-                NodeType(label="Movie", properties={"title": "STRING"}, count=1)
+                NodeType(
+                    labels=("Movie",),
+                    label_expression="Movie",
+                    properties={"title": "STRING"},
+                    count=1,
+                )
             ],
             relationship_types=[
                 RelationshipType(
                     type="ACTED_IN",
-                    start_label="Person",
-                    end_label="Movie",
+                    start_labels=("Person",),
+                    end_labels=("Movie",),
+                    start_label_expression="Person",
+                    end_label_expression="Movie",
                     properties={},
                 )
             ],

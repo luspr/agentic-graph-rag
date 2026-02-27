@@ -19,12 +19,14 @@ def sample_schema() -> GraphSchema:
     return GraphSchema(
         node_types=[
             NodeType(
-                label="Person",
+                labels=("Person",),
+                label_expression="Person",
                 properties={"name": "STRING", "born": "INTEGER"},
                 count=100,
             ),
             NodeType(
-                label="Movie",
+                labels=("Movie",),
+                label_expression="Movie",
                 properties={
                     "title": "STRING",
                     "released": "INTEGER",
@@ -36,14 +38,18 @@ def sample_schema() -> GraphSchema:
         relationship_types=[
             RelationshipType(
                 type="ACTED_IN",
-                start_label="Person",
-                end_label="Movie",
+                start_labels=("Person",),
+                end_labels=("Movie",),
+                start_label_expression="Person",
+                end_label_expression="Movie",
                 properties={"roles": "LIST"},
             ),
             RelationshipType(
                 type="DIRECTED",
-                start_label="Person",
-                end_label="Movie",
+                start_labels=("Person",),
+                end_labels=("Movie",),
+                start_label_expression="Person",
+                end_label_expression="Movie",
                 properties={},
             ),
         ],
@@ -357,7 +363,12 @@ def test_build_system_prompt_node_without_properties(
     """build_system_prompt handles nodes with no properties."""
     schema = GraphSchema(
         node_types=[
-            NodeType(label="Tag", properties={}, count=10),
+            NodeType(
+                labels=("Tag",),
+                label_expression="Tag",
+                properties={},
+                count=10,
+            ),
         ],
         relationship_types=[],
     )
@@ -374,14 +385,26 @@ def test_build_system_prompt_relationship_without_properties(
     """build_system_prompt handles relationships with no properties."""
     schema = GraphSchema(
         node_types=[
-            NodeType(label="Person", properties={}, count=10),
-            NodeType(label="Movie", properties={}, count=5),
+            NodeType(
+                labels=("Person",),
+                label_expression="Person",
+                properties={},
+                count=10,
+            ),
+            NodeType(
+                labels=("Movie",),
+                label_expression="Movie",
+                properties={},
+                count=5,
+            ),
         ],
         relationship_types=[
             RelationshipType(
                 type="LIKES",
-                start_label="Person",
-                end_label="Movie",
+                start_labels=("Person",),
+                end_labels=("Movie",),
+                start_label_expression="Person",
+                end_label_expression="Movie",
                 properties={},
             ),
         ],
@@ -392,6 +415,58 @@ def test_build_system_prompt_relationship_without_properties(
     assert "LIKES" in prompt
     assert "Person" in prompt
     assert "Movie" in prompt
+
+
+def test_build_system_prompt_groups_relationship_patterns_by_type(
+    prompt_manager: PromptManager,
+) -> None:
+    """build_system_prompt groups endpoint patterns under one relationship type."""
+    schema = GraphSchema(
+        node_types=[
+            NodeType(
+                labels=("Base", "Document"),
+                label_expression="Base:Document",
+                properties={},
+                count=10,
+            ),
+            NodeType(
+                labels=("Base", "Comment"),
+                label_expression="Base:Comment",
+                properties={},
+                count=5,
+            ),
+            NodeType(
+                labels=("Base", "Person"),
+                label_expression="Base:Person",
+                properties={},
+                count=3,
+            ),
+        ],
+        relationship_types=[
+            RelationshipType(
+                type="CREATED_BY",
+                start_labels=("Base", "Document"),
+                end_labels=("Base", "Person"),
+                start_label_expression="Base:Document",
+                end_label_expression="Base:Person",
+                properties={"created_date_time": "ZONED DATETIME"},
+            ),
+            RelationshipType(
+                type="CREATED_BY",
+                start_labels=("Base", "Comment"),
+                end_labels=("Base", "Person"),
+                start_label_expression="Base:Comment",
+                end_label_expression="Base:Person",
+                properties={"created_date_time": "ZONED DATETIME"},
+            ),
+        ],
+    )
+
+    prompt = prompt_manager.build_system_prompt(schema)
+
+    assert prompt.count("### Relationship: CREATED_BY") == 1
+    assert "(:Base:Comment)-[:CREATED_BY]->(:Base:Person)" in prompt
+    assert "(:Base:Document)-[:CREATED_BY]->(:Base:Person)" in prompt
 
 
 # --- Hybrid strategy prompt tests ---

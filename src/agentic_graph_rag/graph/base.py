@@ -14,9 +14,10 @@ class QueryResult:
 
 @dataclass
 class NodeType:
-    """Description of a node label in the schema."""
+    """Description of a node class (exact label combination) in the schema."""
 
-    label: str
+    labels: tuple[str, ...]
+    label_expression: str
     properties: dict[str, str]  # property_name -> type
     count: int
 
@@ -26,8 +27,10 @@ class RelationshipType:
     """Description of a relationship type in the schema."""
 
     type: str
-    start_label: str
-    end_label: str
+    start_labels: tuple[str, ...]
+    end_labels: tuple[str, ...]
+    start_label_expression: str
+    end_label_expression: str
     properties: dict[str, str]
 
 
