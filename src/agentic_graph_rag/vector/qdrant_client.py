@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
 from qdrant_client import AsyncQdrantClient
@@ -10,6 +11,8 @@ from qdrant_client.http import models
 
 from agentic_graph_rag.config import Settings
 from agentic_graph_rag.vector.base import VectorSearchResult, VectorStore
+
+_POINT_ID_NAMESPACE = uuid.UUID("d4a5eb83-d4af-4fdf-b4cf-9e6b808f6f15")
 
 
 class QdrantVectorStore(VectorStore):
@@ -66,7 +69,7 @@ class QdrantVectorStore(VectorStore):
 
         return [
             VectorSearchResult(
-                id=str(point.id),
+                id=self._search_result_id(point),
                 score=point.score,
                 payload=point.payload or {},
             )
@@ -86,8 +89,14 @@ class QdrantVectorStore(VectorStore):
         self._validate_embedding(embedding)
         await self._ensure_collection()
 
+        normalized_payload = dict(payload)
+        normalized_payload.setdefault("uuid", id)
         vector_struct = self._build_vector_struct(embedding)
-        point = models.PointStruct(id=id, vector=vector_struct, payload=payload)
+        point = models.PointStruct(
+            id=self._to_qdrant_point_id(id),
+            vector=vector_struct,
+            payload=normalized_payload,
+        )
         await self._client.upsert(
             collection_name=self._collection_name,
             points=[point],
@@ -108,6 +117,28 @@ class QdrantVectorStore(VectorStore):
         if self._vector_name is None:
             return embedding
         return {self._vector_name: embedding}
+
+    def _search_result_id(self, point: models.ScoredPoint) -> str:
+        payload = point.payload or {}
+        payload_uuid = payload.get("uuid")
+        if isinstance(payload_uuid, str) and payload_uuid:
+            return payload_uuid
+        return str(point.id)
+
+    def _to_qdrant_point_id(self, value: str) -> int | str:
+        """Convert app-level IDs to Qdrant-compatible point IDs."""
+        if value.isdigit():
+            return int(value)
+        if self._is_uuid(value):
+            return value
+        return str(uuid.uuid5(_POINT_ID_NAMESPACE, value))
+
+    def _is_uuid(self, value: str) -> bool:
+        try:
+            uuid.UUID(value)
+        except ValueError:
+            return False
+        return True
 
     async def _ensure_collection(self) -> None:
         """Ensure the Qdrant collection exists before operations."""

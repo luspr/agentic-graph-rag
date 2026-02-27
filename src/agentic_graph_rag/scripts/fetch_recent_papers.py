@@ -4,65 +4,36 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import re
 import sys
-import xml.etree.ElementTree as ElementTree
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from rich.console import Console
 
+from agentic_graph_rag.scripts.arxiv_client import (
+    ArxivApiClient,
+    ArxivPaper,
+    extract_arxiv_id,
+    paper_to_dict,
+)
 
-ARXIV_API_URL = "https://export.arxiv.org/api/query"
 DEFAULT_QUERIES = ("knowledge graph", "graph rag")
 DEFAULT_LIMIT = 50
 DEFAULT_TIMEOUT = 30.0
 DEFAULT_OUTPUT_DIR = Path("data/paper_search")
+DEFAULT_CACHE_DIR = Path("data/arxiv/cache")
 DEFAULT_PDF_DIRNAME = "pdfs"
+DEFAULT_CACHE_TTL_HOURS = 24
+DEFAULT_THROTTLE_SECONDS = 3.5
 SOURCE_NAME = "arxiv"
 USER_AGENT = "agentic-graph-rag/0.1"
-
-ATOM_NS = "http://www.w3.org/2005/Atom"
-OPENSEARCH_NS = "http://a9.com/-/spec/opensearch/1.1/"
-ARXIV_NS = "http://arxiv.org/schemas/atom"
-NS = {"atom": ATOM_NS, "opensearch": OPENSEARCH_NS, "arxiv": ARXIV_NS}
-
-
-@dataclass(frozen=True)
-class Paper:
-    """Representation of a single arXiv paper entry."""
-
-    title: str
-    authors: list[str]
-    published: str
-    updated: str
-    summary: str
-    url: str
-    pdf_url: str | None
-    primary_category: str | None
-    query: str
-    source: str = SOURCE_NAME
-
-    def to_dict(self) -> dict[str, Any]:
-        """Convert the paper to a JSON-serializable dict."""
-        return {
-            "title": self.title,
-            "authors": self.authors,
-            "published": self.published,
-            "updated": self.updated,
-            "summary": self.summary,
-            "url": self.url,
-            "pdf_url": self.pdf_url,
-            "primary_category": self.primary_category,
-            "query": self.query,
-            "source": self.source,
-        }
 
 
 @dataclass(frozen=True)
@@ -73,7 +44,7 @@ class SearchResult:
     retrieved_at: str
     limit: int
     total_results: int | None
-    papers: list[Paper]
+    papers: list[ArxivPaper]
     source: str = SOURCE_NAME
 
     def to_dict(self) -> dict[str, Any]:
@@ -84,7 +55,7 @@ class SearchResult:
             "limit": self.limit,
             "total_results": self.total_results,
             "source": self.source,
-            "papers": [paper.to_dict() for paper in self.papers],
+            "papers": [paper_to_dict(paper) for paper in self.papers],
         }
 
 
@@ -122,6 +93,24 @@ def _parse_args() -> argparse.Namespace:
         help="HTTP timeout in seconds.",
     )
     parser.add_argument(
+        "--cache-dir",
+        type=Path,
+        default=DEFAULT_CACHE_DIR,
+        help="Directory for cached arXiv responses.",
+    )
+    parser.add_argument(
+        "--cache-ttl-hours",
+        type=int,
+        default=DEFAULT_CACHE_TTL_HOURS,
+        help="Cache TTL in hours for arXiv responses.",
+    )
+    parser.add_argument(
+        "--throttle-seconds",
+        type=float,
+        default=DEFAULT_THROTTLE_SECONDS,
+        help="Minimum delay between arXiv API requests.",
+    )
+    parser.add_argument(
         "--download-pdfs",
         action="store_true",
         help="Download PDFs for papers that include a PDF link.",
@@ -143,118 +132,6 @@ def _parse_args() -> argparse.Namespace:
         help="Print paper titles to the console.",
     )
     return parser.parse_args()
-
-
-def _build_query_url(query: str, limit: int) -> str:
-    params = {
-        "search_query": f'all:"{query}"',
-        "start": 0,
-        "max_results": limit,
-        "sortBy": "submittedDate",
-        "sortOrder": "descending",
-    }
-    return f"{ARXIV_API_URL}?{urlencode(params)}"
-
-
-def _fetch_feed(url: str, timeout: float) -> str:
-    request = Request(url, headers={"User-Agent": USER_AGENT})
-    try:
-        with urlopen(request, timeout=timeout) as response:  # noqa: S310
-            return response.read().decode("utf-8")
-    except (HTTPError, URLError) as exc:
-        raise RuntimeError(f"Failed to fetch arXiv feed: {exc}") from exc
-
-
-def _normalize_text(value: str | None) -> str:
-    if not value:
-        return ""
-    return " ".join(value.split())
-
-
-def _text(entry: ElementTree.Element, tag: str) -> str:
-    node = entry.find(tag, NS)
-    return _normalize_text(node.text if node is not None else None)
-
-
-def _primary_category(entry: ElementTree.Element) -> str | None:
-    node = entry.find("arxiv:primary_category", NS)
-    if node is None:
-        return None
-    term = node.attrib.get("term", "")
-    return term or None
-
-
-def _pdf_link(entry: ElementTree.Element) -> str | None:
-    for link in entry.findall("atom:link", NS):
-        link_type = link.attrib.get("type")
-        if link_type == "application/pdf":
-            href = link.attrib.get("href")
-            if href:
-                return href
-        if link.attrib.get("title") == "pdf":
-            href = link.attrib.get("href")
-            if href:
-                return href
-    return None
-
-
-def _authors(entry: ElementTree.Element) -> list[str]:
-    authors: list[str] = []
-    for author in entry.findall("atom:author", NS):
-        name = author.find("atom:name", NS)
-        if name is not None and name.text:
-            authors.append(_normalize_text(name.text))
-    return authors
-
-
-def _entry_to_paper(entry: ElementTree.Element, query: str) -> Paper:
-    title = _text(entry, "atom:title")
-    summary = _text(entry, "atom:summary")
-    published = _text(entry, "atom:published")
-    updated = _text(entry, "atom:updated")
-    url = _text(entry, "atom:id")
-    return Paper(
-        title=title,
-        authors=_authors(entry),
-        published=published,
-        updated=updated,
-        summary=summary,
-        url=url,
-        pdf_url=_pdf_link(entry),
-        primary_category=_primary_category(entry),
-        query=query,
-    )
-
-
-def _parse_total_results(root: ElementTree.Element) -> int | None:
-    total_node = root.find("opensearch:totalResults", NS)
-    if total_node is None or not total_node.text:
-        return None
-    total_text = total_node.text.strip()
-    return int(total_text) if total_text.isdigit() else None
-
-
-def _parse_feed(xml_text: str, query: str) -> tuple[list[Paper], int | None]:
-    try:
-        root = ElementTree.fromstring(xml_text)
-    except ElementTree.ParseError as exc:
-        raise RuntimeError(f"Failed to parse arXiv feed: {exc}") from exc
-    papers = [_entry_to_paper(entry, query) for entry in root.findall("atom:entry", NS)]
-    return papers, _parse_total_results(root)
-
-
-def _fetch_papers(query: str, limit: int, timeout: float) -> SearchResult:
-    url = _build_query_url(query, limit)
-    feed = _fetch_feed(url, timeout)
-    papers, total_results = _parse_feed(feed, query)
-    retrieved_at = datetime.now(timezone.utc).isoformat()
-    return SearchResult(
-        query=query,
-        retrieved_at=retrieved_at,
-        limit=limit,
-        total_results=total_results,
-        papers=papers,
-    )
 
 
 def _slugify(value: str) -> str:
@@ -287,22 +164,12 @@ def _print_titles(console: Console, result: SearchResult) -> None:
         console.print(f"- {paper.title}")
 
 
-def _extract_arxiv_id(value: str) -> str | None:
-    match = re.search(r"(\d{4}\.\d{4,5})(v\d+)?", value)
-    if match:
-        return match.group(0)
-    legacy_match = re.search(r"([a-z-]+/\d{7})(v\d+)?", value, re.IGNORECASE)
-    if legacy_match:
-        return legacy_match.group(0)
-    return None
-
-
-def _pdf_filename(paper: Paper) -> str:
-    candidates = [paper.pdf_url, paper.url]
+def _pdf_filename(paper: ArxivPaper) -> str:
+    candidates = [paper.pdf_url, paper.id_url]
     for candidate in candidates:
         if not candidate:
             continue
-        arxiv_id = _extract_arxiv_id(candidate)
+        arxiv_id = extract_arxiv_id(candidate)
         if arxiv_id:
             return f"{arxiv_id}.pdf"
     return f"{_slugify(paper.title)}.pdf"
@@ -316,9 +183,7 @@ def _download_pdf(url: str, destination: Path, timeout: float, overwrite: bool) 
     try:
         with (
             urlopen(request, timeout=timeout) as response,
-            destination.open(  # noqa: S310
-                "wb"
-            ) as handle,
+            destination.open("wb") as handle,  # noqa: S310
         ):
             handle.write(response.read())
     except (HTTPError, URLError) as exc:
@@ -350,19 +215,47 @@ def _download_pdfs(
     )
 
 
-def main() -> int:
-    """Run the paper fetcher."""
-    args = _parse_args()
-    console = Console()
+async def _fetch_papers(
+    client: ArxivApiClient,
+    query: str,
+    limit: int,
+) -> SearchResult:
+    page = await client.search(query, start=0, max_results=limit)
+    retrieved_at = datetime.now(timezone.utc).isoformat()
+    return SearchResult(
+        query=query,
+        retrieved_at=retrieved_at,
+        limit=limit,
+        total_results=page.total_results,
+        papers=page.papers,
+    )
+
+
+async def _run(args: argparse.Namespace, console: Console) -> int:
     queries = args.queries or list(DEFAULT_QUERIES)
     pdf_dir = args.pdf_dir or (args.out_dir / DEFAULT_PDF_DIRNAME)
+
     if args.limit <= 0:
         console.print("[red]Limit must be greater than zero.[/red]")
         return 1
+    if args.cache_ttl_hours < 0:
+        console.print("[red]Cache TTL hours must be >= 0.[/red]")
+        return 1
+    if args.throttle_seconds < 0:
+        console.print("[red]Throttle seconds must be >= 0.[/red]")
+        return 1
+
+    client = ArxivApiClient(
+        user_agent=USER_AGENT,
+        cache_dir=args.cache_dir,
+        cache_ttl_seconds=args.cache_ttl_hours * 60 * 60,
+        throttle_seconds=args.throttle_seconds,
+        timeout_seconds=args.timeout,
+    )
 
     try:
         for query in queries:
-            result = _fetch_papers(query, args.limit, args.timeout)
+            result = await _fetch_papers(client, query, args.limit)
             path = _write_results(result, args.out_dir)
             _print_summary(console, result, path)
             if args.print_titles:
@@ -380,6 +273,17 @@ def main() -> int:
         return 1
 
     return 0
+
+
+def main() -> int:
+    """Run the paper fetcher."""
+    args = _parse_args()
+    console = Console()
+    try:
+        return asyncio.run(_run(args, console))
+    except KeyboardInterrupt:
+        console.print("[red]Interrupted.[/red]")
+        return 130
 
 
 if __name__ == "__main__":

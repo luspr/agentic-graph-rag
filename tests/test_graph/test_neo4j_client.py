@@ -204,17 +204,17 @@ async def test_get_schema_returns_graph_schema(settings: Settings) -> None:
         ),
         "count(*)": QueryResult(
             records=[
-                {"label": "Movie", "count": 10},
-                {"label": "Person", "count": 5},
+                {"labels": ["Movie"], "count": 10},
+                {"labels": ["Person"], "count": 5},
             ],
             summary={},
         ),
-        "labels(a)[0]": QueryResult(
+        "start_labels": QueryResult(
             records=[
                 {
                     "type": "ACTED_IN",
-                    "start_label": "Person",
-                    "end_label": "Movie",
+                    "start_labels": ["Person"],
+                    "end_labels": ["Movie"],
                 },
             ],
             summary={},
@@ -245,11 +245,13 @@ async def test_get_schema_returns_graph_schema(settings: Settings) -> None:
 
     # Verify node types
     assert len(schema.node_types) == 2
-    movie = next(n for n in schema.node_types if n.label == "Movie")
+    movie = next(n for n in schema.node_types if n.label_expression == "Movie")
+    assert movie.labels == ("Movie",)
     assert movie.properties == {"title": "String", "year": "Integer"}
     assert movie.count == 10
 
-    person = next(n for n in schema.node_types if n.label == "Person")
+    person = next(n for n in schema.node_types if n.label_expression == "Person")
+    assert person.labels == ("Person",)
     assert person.properties == {"name": "String"}
     assert person.count == 5
 
@@ -257,9 +259,84 @@ async def test_get_schema_returns_graph_schema(settings: Settings) -> None:
     assert len(schema.relationship_types) == 1
     rel = schema.relationship_types[0]
     assert rel.type == "ACTED_IN"
-    assert rel.start_label == "Person"
-    assert rel.end_label == "Movie"
+    assert rel.start_labels == ("Person",)
+    assert rel.end_labels == ("Movie",)
+    assert rel.start_label_expression == "Person"
+    assert rel.end_label_expression == "Movie"
     assert rel.properties == {"role": "String"}
+
+
+@pytest.mark.anyio
+async def test_get_schema_preserves_multi_label_combinations(
+    settings: Settings,
+) -> None:
+    """get_schema() keeps full label combinations for node and relationship endpoints."""
+    client = Neo4jClient(settings)
+
+    responses: dict[str, QueryResult] = {
+        "nodeTypeProperties": QueryResult(
+            records=[
+                {
+                    "nodeLabels": ["Base", "Account", "MSGraphAccount"],
+                    "propertyName": "user_principal_name",
+                    "propertyTypes": ["String"],
+                },
+                {
+                    "nodeLabels": ["Base", "Account", "EmailAccount"],
+                    "propertyName": "registered_email",
+                    "propertyTypes": ["String"],
+                },
+            ],
+            summary={},
+        ),
+        "count(*)": QueryResult(
+            records=[
+                {"labels": ["Base", "Account", "MSGraphAccount"], "count": 12},
+                {"labels": ["Base", "Account", "EmailAccount"], "count": 7},
+            ],
+            summary={},
+        ),
+        "start_labels": QueryResult(
+            records=[
+                {
+                    "type": "SENT_BY",
+                    "start_labels": ["Base", "Message", "MSTeamsMessage"],
+                    "end_labels": ["Base", "Account", "MSGraphAccount"],
+                },
+            ],
+            summary={},
+        ),
+        "relationshipTypeProperties": QueryResult(records=[], summary={}),
+        "valueType": QueryResult(records=[], summary={}),
+    }
+
+    async def _mock_execute(
+        cypher: str, params: dict[str, Any] | None = None
+    ) -> QueryResult:
+        for key, result in responses.items():
+            if key in cypher:
+                return result
+        return QueryResult(records=[], summary={})
+
+    client.execute = _mock_execute  # type: ignore[assignment]
+
+    schema = await client.get_schema()
+
+    assert len(schema.node_types) == 2
+    ms_graph_account = next(
+        node_type
+        for node_type in schema.node_types
+        if node_type.labels == ("Account", "Base", "MSGraphAccount")
+    )
+    assert ms_graph_account.label_expression == "Account:Base:MSGraphAccount"
+    assert ms_graph_account.count == 12
+    assert ms_graph_account.properties == {"user_principal_name": "String"}
+
+    rel = next(r for r in schema.relationship_types if r.type == "SENT_BY")
+    assert rel.start_labels == ("Base", "MSTeamsMessage", "Message")
+    assert rel.end_labels == ("Account", "Base", "MSGraphAccount")
+    assert rel.start_label_expression == "Base:MSTeamsMessage:Message"
+    assert rel.end_label_expression == "Account:Base:MSGraphAccount"
 
 
 @pytest.mark.anyio
@@ -282,16 +359,16 @@ async def test_get_schema_relationship_properties_fallback(
         ),
         "count(*)": QueryResult(
             records=[
-                {"label": "Entity", "count": 2},
+                {"labels": ["Entity"], "count": 2},
             ],
             summary={},
         ),
-        "labels(a)[0]": QueryResult(
+        "start_labels": QueryResult(
             records=[
                 {
                     "type": "INVESTIGATED",
-                    "start_label": "Entity",
-                    "end_label": "Entity",
+                    "start_labels": ["Entity"],
+                    "end_labels": ["Entity"],
                 },
             ],
             summary={},
@@ -353,3 +430,62 @@ async def test_get_schema_returns_empty_on_error(
     schema = await client.get_schema()
     assert schema.node_types == []
     assert schema.relationship_types == []
+
+
+# --- has_gds() tests ---
+
+
+@pytest.mark.anyio
+async def test_has_gds_returns_true_when_gds_available(
+    settings: Settings,
+) -> None:
+    """has_gds() returns True when gds.version() succeeds."""
+    client = Neo4jClient(settings)
+
+    async def _mock_execute(
+        cypher: str, params: dict[str, Any] | None = None
+    ) -> QueryResult:
+        if "gds.version()" in cypher:
+            return QueryResult(records=[{"version": "2.6.0"}], summary={})
+        return QueryResult(records=[], summary={})
+
+    client.execute = _mock_execute  # type: ignore[assignment]
+
+    assert await client.has_gds() is True
+
+
+@pytest.mark.anyio
+async def test_has_gds_returns_false_when_gds_unavailable(
+    settings: Settings,
+) -> None:
+    """has_gds() returns False when gds.version() fails."""
+    client = Neo4jClient(settings)
+
+    async def _mock_execute(
+        cypher: str, params: dict[str, Any] | None = None
+    ) -> QueryResult:
+        return QueryResult(records=[], summary={}, error="Unknown function")
+
+    client.execute = _mock_execute  # type: ignore[assignment]
+
+    assert await client.has_gds() is False
+
+
+@pytest.mark.anyio
+async def test_has_gds_caches_result(settings: Settings) -> None:
+    """has_gds() caches after first probe and does not re-execute."""
+    client = Neo4jClient(settings)
+    call_count = 0
+
+    async def _counting_execute(
+        cypher: str, params: dict[str, Any] | None = None
+    ) -> QueryResult:
+        nonlocal call_count
+        call_count += 1
+        return QueryResult(records=[{"version": "2.6.0"}], summary={})
+
+    client.execute = _counting_execute  # type: ignore[assignment]
+
+    assert await client.has_gds() is True
+    assert await client.has_gds() is True
+    assert call_count == 1

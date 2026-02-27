@@ -1,5 +1,6 @@
 """Prompt manager for constructing system and user prompts."""
 
+from collections import defaultdict
 import json
 from dataclasses import dataclass
 from typing import Any
@@ -103,37 +104,74 @@ class PromptManager:
 
         if schema.relationship_types:
             parts.append("\n## Relationship Types\n")
-            for rel_type in schema.relationship_types:
-                parts.append(self._format_relationship_type(rel_type))
+            grouped_relationships = self._group_relationship_types(
+                schema.relationship_types
+            )
+            for relationship_type, relationships in grouped_relationships:
+                parts.append(
+                    self._format_relationship_type(relationship_type, relationships)
+                )
 
         return "".join(parts) if parts else "No schema information available."
 
     def _format_node_type(self, node_type: NodeType) -> str:
         """Format a single node type."""
         properties = ", ".join(
-            f"{name}: {dtype}" for name, dtype in node_type.properties.items()
+            f"{name}: {dtype}" for name, dtype in sorted(node_type.properties.items())
         )
         if not properties:
             properties = "none"
 
         return SCHEMA_NODE_TEMPLATE.format(
-            label=node_type.label,
+            label_expression=node_type.label_expression,
             count=node_type.count,
             properties=properties,
         )
 
-    def _format_relationship_type(self, rel_type: RelationshipType) -> str:
-        """Format a single relationship type."""
+    def _group_relationship_types(
+        self,
+        relationship_types: list[RelationshipType],
+    ) -> list[tuple[str, list[RelationshipType]]]:
+        """Group relationship entries by type in deterministic order."""
+        grouped: dict[str, list[RelationshipType]] = defaultdict(list)
+        for relationship_type in relationship_types:
+            grouped[relationship_type.type].append(relationship_type)
+
+        return [(rel_type, grouped[rel_type]) for rel_type in sorted(grouped)]
+
+    def _format_relationship_type(
+        self,
+        relationship_type: str,
+        relationships: list[RelationshipType],
+    ) -> str:
+        """Format one relationship type with all observed endpoint label patterns."""
+        merged_properties: dict[str, str] = {}
+        for relationship in relationships:
+            merged_properties.update(relationship.properties)
+
         properties = ", ".join(
-            f"{name}: {dtype}" for name, dtype in rel_type.properties.items()
+            f"{name}: {dtype}" for name, dtype in sorted(merged_properties.items())
         )
         if not properties:
             properties = "none"
 
+        unique_patterns = sorted(
+            {
+                (
+                    relationship.start_label_expression,
+                    relationship.end_label_expression,
+                )
+                for relationship in relationships
+            }
+        )
+        patterns = "\n".join(
+            (f"  - (:{start_expression})-[:{relationship_type}]->(:{end_expression})")
+            for start_expression, end_expression in unique_patterns
+        )
+
         return SCHEMA_RELATIONSHIP_TEMPLATE.format(
-            type=rel_type.type,
-            start_label=rel_type.start_label,
-            end_label=rel_type.end_label,
+            type=relationship_type,
+            patterns=patterns,
             properties=properties,
         )
 

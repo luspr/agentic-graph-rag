@@ -52,7 +52,7 @@ class OpenAILLMClient(LLMClient):
         messages: list[dict[str, Any]],
         tools: list[ToolDefinition] | None = None,
         temperature: float = 0.0,
-        reasoning_effort: str | None = None,
+        reasoning_effort: str | None = 'low',
     ) -> LLMResponse:
         """Generate a completion with optional tool calling.
 
@@ -68,6 +68,7 @@ class OpenAILLMClient(LLMClient):
         Raises:
             OpenAIClientError: If the API request fails after retries.
         """
+        # print("effort", reasoning_effort)
         openai_tools = self._convert_tools(tools) if tools else None
 
         kwargs: dict[str, Any] = {"model": self._model, "messages": messages}

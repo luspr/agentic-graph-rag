@@ -541,7 +541,7 @@ Below is a detailed explanation with code references and a comparison to the Cyp
 
 ### Task 6.2: Add Qdrant ingestion/indexing pipeline
 
-state: todo
+state: done
 
 **Description:** Implement a dataset-aware ingestion pipeline that generates embeddings and upserts vectors into Qdrant. This is required to make `vector_search` useful beyond external/hand-built indexes.
 
@@ -569,10 +569,10 @@ state: todo
 - `README.md` (usage documentation)
 
 **Acceptance Criteria:**
-- [ ] Script can embed and upsert nodes for at least one dataset.
-- [ ] Payload includes `uuid` and label in every Qdrant point.
-- [ ] Script is idempotent and reports progress.
-- [ ] Documented run command in README.
+- [x] Script can embed and upsert nodes for at least one dataset.
+- [x] Payload includes `uuid` and label in every Qdrant point.
+- [x] Script is idempotent and reports progress.
+- [x] Documented run command in README.
 
 ### Task 6.3: Improve result formatting for vector search
 
